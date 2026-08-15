@@ -9,6 +9,49 @@
 - 全面检查报告：[`docs/全面检查报告.md`](docs/全面检查报告.md)
 - 许可证：[`LICENSE`](LICENSE)（MIT）
 
+## 部署
+
+1. 克隆本仓库，进入项目目录并生成可安装包（推荐，避免 ESM symlink 解析问题）：
+
+   ```bash
+   cd dsh-web-search-pool
+   npm pack
+   ```
+
+2. 在 `$DSH_HOME/profiles/web/package.json` 的 `dependencies` 中加入 tgz 依赖：
+
+   ```json
+   {
+     "dependencies": {
+       "dsh-web-search-pool": "file:<本仓库绝对路径>/dsh-web-search-pool-0.1.0.tgz"
+     }
+   }
+   ```
+
+3. 安装 profile 依赖并编辑 `cordis.patch.yml`：
+
+   ```bash
+   cd "$DSH_HOME/profiles/web"
+   pnpm install
+   ```
+
+4. 按 [`docs/挂载指南.md`](docs/挂载指南.md) 配置 `web.searchProvider`、key 池、凭据和 settings 白名单脚本。
+
+5. 重启 `dsh web`。
+
+> 如果直接使用 `file:<仓库源码目录>` 引用，必须在插件源码目录先安装 peer 依赖，
+> 否则启动会报 `Cannot find package '@deepseek-ai/dsh-settings'`：
+>
+> ```bash
+> npm install --no-save \
+>   @deepseek-ai/cordis \
+>   @deepseek-ai/dsh-credentials \
+>   @deepseek-ai/dsh-launch-environment \
+>   @deepseek-ai/dsh-settings \
+>   @deepseek-ai/dsh-web \
+>   @deepseek-ai/schemastery
+> ```
+
 ## 方案概览
 
 **方案 A**：在 DSH 内写一个「多 key 多供应商」`WebSearchProvider`（id `search-pool`）composition 插件，
