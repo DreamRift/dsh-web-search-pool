@@ -1,0 +1,12 @@
+node_modules/
+*.tgz
+*.log
+*.bak
+.env
+.env.*
+.credentials.yaml
+settings.yaml
+.DS_Store
+coverage/
+dist/
+docs/开发事故复盘与规范.md
