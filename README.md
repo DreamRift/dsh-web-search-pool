@@ -1,6 +1,8 @@
 # AI 搜索 Key 池负载均衡
 
-对多个 Tavily key 和可选的 Exa key 按各自限流做负载均衡，对外提供统一搜索服务，接入 DeepSeek Harness。
+`dsh-web-search-pool` 是 DeepSeek Harness 的网页搜索插件。它把多个 Tavily key 和可选的 Exa key
+组织成一个 key 池，按每个 key 的 RPM 限流自动负载均衡，并在 429、凭据缺失、额度耗尽或上游失败时
+自动切换到其他 key 或供应商。插件还提供设置页卡片，可配置 key 池、查看 Tavily 额度总览并手动刷新。
 
 - 设计依据与决策记录：[`AI搜索Key池负载均衡-开发计划.md`](AI搜索Key池负载均衡-开发计划.md)
 - 挂载与配置：[`docs/挂载指南.md`](docs/挂载指南.md)
