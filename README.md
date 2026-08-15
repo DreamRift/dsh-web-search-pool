@@ -126,6 +126,13 @@ AI搜索Key池负载均衡/
 - **provider**：`search()` 循环「acquire → resolve 凭据 → adapter 调用」，429/失败自动换下一个 key（上限 = key 总数），
   每次尝试写入插件日志（`ctx.logger`，不含密钥明文；不写未注册会话事件）。
 
+## 开发约定
+
+- 核心逻辑位于 `src/core` 与 `src/adapters`，纯 JS、不依赖 DSH，可跨平台复用。
+- 不引入第三方运行时依赖；测试使用 Node 内置 `node:test`，要求 Node 18+。
+- 不硬编码平台路径；部署文档统一使用 `$DSH_HOME` 和 `<...>` 占位符。
+- 发布/部署优先 `npm pack` 生成 tgz，避免 ESM symlink 依赖解析问题。
+
 ## 测试
 
 核心库与适配器不依赖 DSH，可用 node 直接单测：

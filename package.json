@@ -5,6 +5,21 @@
   "description": "多 key 多供应商（Tavily + Exa）搜索 provider，为 DeepSeek Harness 的 web capability seam（ctx.web）提供按限流负载均衡",
   "type": "module",
   "main": "src/dsh/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DreamRift/dsh-web-search-pool.git"
+  },
+  "homepage": "https://github.com/DreamRift/dsh-web-search-pool",
+  "files": [
+    "src/",
+    "scripts/",
+    "docs/挂载指南.md",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/dsh/index.js",
     "./client": "./src/dsh/client.js",
