@@ -340,19 +340,21 @@ DSH 本地（已读源码）：
 
 ---
 
-## 9. 实现状态（2026-08-15 更新）
+## 9. 实现状态（2026-08-16 更新）
 
 > 方案 A 的核心开发、挂载与设置页卡片均已落地；真实搜索需填 Tavily/Exa key。
 > 机制结论均来自对已安装 DSH 源码的直接阅读（来源见 `docs/挂载指南.md` 第 6 节）。
+> 2026-08-16 完成 v0.2.0 稳定性/效率/跨平台重构（详见 `docs/全面检查报告.md` 第五节），
+> 已开源至 [DreamRift/dsh-web-search-pool](https://github.com/DreamRift/dsh-web-search-pool)。
 
 | 计划阶段 | 状态 | 产出 |
 |---|---|---|
-| 阶段 1 核心调度库 | ✅ 完成 | `src/core/`：KeyPool（冷却/熔断）、TokenBucketLimiter（令牌桶 + 存储后端抽象）、Scheduler（smooth WRR / least-used + 429 换 key + failover） |
-| 阶段 2 供应商适配器 | ✅ 完成 | `src/adapters/`：TavilyAdapter（answer→content、429→Retry-After）、ExaAdapter（无 answer） |
-| 阶段 3 DSH provider 封装 | ✅ 完成 | `src/dsh/`：SearchPoolProvider（id `search-pool`）、Config schema、`apply`；client half `client.js` 注册设置页卡片 |
-| 阶段 4 配置 schema | ✅ 完成 | schemastery schema：`enabled`（搜索开关）、`providers.{tavily,exa}.keys[]`（含 `remark` 备注）、`strategy`、`providerPriority`、`allowedFails`、`cooldownMs`、`retryAfterFallbackMs`、额度控制（`usageCacheMs`/`quotaReserveCredits`/`quotaExhaustedCooldownMs`）、运行时字段（`usage`/`usageRefreshTick`/`usageDiagnostic`） |
-| 阶段 5 挂载与验证 | ✅ 完成 | 已挂载到 web profile（`cordis.patch.yml` + junction）；provider 已挂载；设置页卡片可读配置/编辑/开关；api-proxy 白名单脚本 `scripts/patch-api-proxy-namespace.mjs`；额度命令行脚本 `scripts/check-usage.mjs` |
-| 阶段 6 测试 | ✅ 完成 | 59 个 node:test 用例全过（KeyPool/RateLimiter/Scheduler/Adapters/Provider/query-intent/resolve-params） |
+| 阶段 1 核心调度库 | ✅ 完成 | `src/core/`：KeyPool（冷却/熔断，O(1) 索引）、TokenBucketLimiter（令牌桶 + 存储后端抽象）、Scheduler（smooth WRR / least-used + 429 换 key + failover）、http-utils（Retry-After/abort/超时组合） |
+| 阶段 2 供应商适配器 | ✅ 完成 | `src/adapters/`：TavilyAdapter（answer→content、429→Retry-After）、ExaAdapter（REST + 匿名 MCP，SSE 多行健壮解析） |
+| 阶段 3 DSH provider 封装 | ✅ 完成 | `src/dsh/`：SearchPoolProvider（id `search-pool`，per-attempt 超时 + 额度后台刷新 + dispose）、Config schema、`apply`；client half `client.js` 注册设置页卡片（定时器清理/竞态守卫/单次事务保存） |
+| 阶段 4 配置 schema | ✅ 完成 | schemastery schema：`enabled`（搜索开关）、`providers.{tavily,exa}.keys[]`（含 `remark` 备注）、`strategy`、`providerPriority`、`allowedFails`、`cooldownMs`、`retryAfterFallbackMs`、`requestTimeoutMs`（单次请求超时）、额度控制（`usageCacheMs`/`quotaReserveCredits`/`quotaExhaustedCooldownMs`）、运行时字段（`usage`/`usageRefreshTick`/`usageDiagnostic`）；默认值统一由 `core/constants.js` 的 `DEFAULTS` 提供 |
+| 阶段 5 挂载与验证 | ✅ 完成 | 已挂载到 web profile（`cordis.patch.yml` + junction）；provider 已挂载；设置页卡片可读配置/编辑/开关；api-proxy 白名单脚本 `scripts/patch-api-proxy-namespace.mjs`（跨平台 + 语法校验）；额度命令行脚本 `scripts/check-usage.mjs`（`DSH_HOME` + 三级凭据来源 + 并行查询）；免 spawn 测试 runner `scripts/run-tests.mjs` |
+| 阶段 6 测试 | ✅ 完成 | 87 个 node:test 用例全过（key-pool/rate-limiter/scheduler/adapters/provider/query-intent/resolve-params/http-utils/scripts；`npm run test:local` 或逐文件运行） |
 | 阶段 7 多实例升级 | 📝 备忘 | 核心库已与 DSH 解耦，存储后端已抽象，升级路径见第 5 节 |
 
 ### 关键实现决策（相对计划的补充/修正）
