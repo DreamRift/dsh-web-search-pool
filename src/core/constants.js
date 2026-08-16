@@ -11,13 +11,26 @@ export const PROVIDER_EXA = 'exa';
 export const STRATEGY_WEIGHTED_ROUND_ROBIN = 'weighted-round-robin';
 export const STRATEGY_LEAST_USED = 'least-used';
 
-/** 默认配置值（与 DSH 层的 config schema 默认值保持一致）。 */
+/** 30 天（毫秒）：额度耗尽后的默认长冷却时长。 */
+export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 默认配置值——唯一权威来源。DSH 层的 config schema 与 `resolveOptions` 的回退值
+ * 都从这里取，避免三处人肉同步。
+ */
 export const DEFAULTS = {
   strategy: STRATEGY_WEIGHTED_ROUND_ROBIN,
   providerPriority: [PROVIDER_TAVILY, PROVIDER_EXA],
   allowedFails: 3,
   cooldownMs: 30_000,
   retryAfterFallbackMs: 1_000,
+  usageCacheMs: 300_000,
+  quotaReserveCredits: 2,
+  quotaExhaustedCooldownMs: THIRTY_DAYS_MS,
+  /** 单次搜索请求（每个 key 尝试）的默认超时（毫秒）；0 表示禁用。 */
+  requestTimeoutMs: 20_000,
+  /** 单个 key 的默认 rpm（限流值兜底，entry 未配 rpm 时使用）。 */
+  rpmFallback: 60,
 };
 
 /**

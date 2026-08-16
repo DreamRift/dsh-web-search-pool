@@ -29,11 +29,12 @@ export class MemoryStore {
  */
 export class TokenBucketLimiter {
   /**
-   * @param {{ store?: {get:Function, set:Function}, capacityFor?: (keyId: string) => number, capacity?: number, refillPerSec?: number, refillPerSecFor?: (keyId: string) => number }} options
+   * @param {{ store?: {get:Function, set:Function}, capacityFor?: (keyId: string) => number, capacity?: number, refillPerSec?: number, refillPerSecFor?: (keyId: string) => number, now?: () => number }} options
    *   - store：状态后端，默认 `MemoryStore`。
    *   - capacityFor：返回指定 key 的 rpm（每分钟上限）。缺省时所有 key 用 `capacity`（默认 60）。
    *   - refillPerSec：覆盖补充速率（每秒令牌数）。缺省按 `capacityFor/60` 推导（rpm 语义）。
    *   - refillPerSecFor：按 key 覆盖补充速率；优先于 `refillPerSec`。
+   *   - now：时间源，测试注入用；默认 Date.now。reset 也用它，保证与调用方时钟一致。
    */
   constructor(options = {}) {
     this.store = options.store ?? new MemoryStore();
@@ -45,9 +46,10 @@ export class TokenBucketLimiter {
     } else {
       this.refillPerSecFor = (key) => this.capacityFor(key) / 60;
     }
+    this._now = options.now ?? (() => Date.now());
   }
 
-  /** 读取并推进某 key 的桶状态到 `now`。 */
+  /** 读取并推进某 key 的桶状态到 `now`（原地改写 store 内对象；后端实现需支持读-改-写）。 */
   _state(key, now) {
     const capacity = this.capacityFor(key);
     const raw = this.store.get(key);
@@ -82,8 +84,8 @@ export class TokenBucketLimiter {
     return this._state(key, now).tokens;
   }
 
-  /** 重置某 key 的桶（测试/运维用）。 */
+  /** 重置某 key 的桶（测试/运维用）；时间源用注入的 `now`，与调用方时钟保持一致。 */
   reset(key) {
-    this.store.set(key, { tokens: this.capacityFor(key), lastRefill: Date.now() });
+    this.store.set(key, { tokens: this.capacityFor(key), lastRefill: this._now() });
   }
 }

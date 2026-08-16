@@ -1,6 +1,6 @@
 /**
  * Exa 搜索适配器。统一接口 `search({ query, apiKey, maxResults, signal, ...高级参数 }) => SearchResult`。
- * 不依赖 DSH。
+ * 不依赖 DSH，只依赖核心库错误类型与共享 HTTP 工具（宿主 fetch 可注入以便单测）。
  *
  * 两种模式：
  *   - 有 API key：走官方 REST `https://api.exa.ai/search`，支持高级功能
@@ -18,12 +18,13 @@
  * @module search-pool/adapters/exa
  */
 
-import { RateLimitError, ProviderHttpError, isAbortError } from '../core/errors.js';
+import { RateLimitError, ProviderHttpError } from '../core/errors.js';
+import { parseRetryAfter, rethrowIfAborted, discardBody } from '../core/http-utils.js';
 
 const EXA_ENDPOINT = 'https://api.exa.ai/search';
 const EXA_MCP_ENDPOINT = 'https://mcp.exa.ai/mcp';
 const MCP_PROTOCOL_VERSION = '2025-03-26';
-const USER_AGENT = 'dsh-web-search-pool/0.1.0';
+const USER_AGENT = 'dsh-web-search-pool/0.2.0';
 
 export class ExaAdapter {
   /**
@@ -34,6 +35,8 @@ export class ExaAdapter {
     this.mcpEndpoint = options.mcpEndpoint ?? EXA_MCP_ENDPOINT;
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init));
     this.retryAfterFallbackMs = options.retryAfterFallbackMs ?? 1_000;
+    /** JSON-RPC 请求 id 自增序号（并发匿名搜索也各自唯一）。 */
+    this._nextRpcId = 0;
   }
 
   /** 无 key 时可走 Exa 官方托管 MCP 的匿名免费层。 */
@@ -92,14 +95,16 @@ export class ExaAdapter {
         ...(signal !== undefined ? { signal } : {}),
       });
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Exa request failed: ${String(error)}`, 0, { cause: error });
     }
 
     if (response.status === 429) {
-      throw new RateLimitError('Exa rate limited (HTTP 429)', this._parseRetryAfter(response));
+      await discardBody(response);
+      throw new RateLimitError('Exa rate limited (HTTP 429)', parseRetryAfter(response, this.retryAfterFallbackMs));
     }
     if (!response.ok) {
+      await discardBody(response);
       throw new ProviderHttpError(`Exa API error (HTTP ${response.status})`, response.status);
     }
 
@@ -107,7 +112,7 @@ export class ExaAdapter {
     try {
       data = await response.json();
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Exa returned an unprocessable body: ${String(error)}`, response.status, { cause: error });
     }
     return this._map(data);
@@ -137,7 +142,7 @@ export class ExaAdapter {
         .join('\n\n');
       return this._mapMcpText(text);
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       if (error instanceof RateLimitError || error instanceof ProviderHttpError) throw error;
       throw new ProviderHttpError(`Exa MCP request failed: ${String(error)}`, 0, { cause: error });
     }
@@ -145,12 +150,12 @@ export class ExaAdapter {
 
   async _mcpInitialize(signal) {
     const { response, payload } = await this._mcpPost({
-      id: 1,
+      id: ++this._nextRpcId,
       method: 'initialize',
       params: {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: 'dsh-web-search-pool', version: '0.1.0' },
+        clientInfo: { name: 'dsh-web-search-pool', version: '0.2.0' },
       },
       signal,
     });
@@ -170,7 +175,7 @@ export class ExaAdapter {
 
   async _mcpToolsCall(sessionId, params, signal) {
     const { response, payload } = await this._mcpPost({
-      id: 2,
+      id: ++this._nextRpcId,
       method: 'tools/call',
       params,
       sessionId,
@@ -182,7 +187,7 @@ export class ExaAdapter {
 
   _throwMcpHttp(response, payload) {
     if (response.status === 429) {
-      throw new RateLimitError('Exa MCP rate limited (HTTP 429)', this.retryAfterFallbackMs);
+      throw new RateLimitError('Exa MCP rate limited (HTTP 429)', parseRetryAfter(response, this.retryAfterFallbackMs));
     }
     if (!response.ok) {
       throw new ProviderHttpError(`Exa MCP error (HTTP ${response.status})`, response.status);
@@ -213,16 +218,15 @@ export class ExaAdapter {
         ...(signal !== undefined ? { signal } : {}),
       });
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Exa MCP request failed: ${String(error)}`, 0, { cause: error });
     }
 
     const text = await this._mcpResponseText(response, signal);
     let payload = {};
     if (text.trim().length > 0) {
-      const line = text.split('\n').find((candidate) => candidate.startsWith('data: '));
       try {
-        payload = JSON.parse(line != null ? line.slice(6) : text);
+        payload = JSON.parse(extractSseData(text) ?? text);
       } catch (error) {
         throw new ProviderHttpError(`Exa MCP returned an unprocessable body: ${String(error)}`, response.status, { cause: error });
       }
@@ -234,7 +238,7 @@ export class ExaAdapter {
     try {
       return await response.text();
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Exa MCP returned an unprocessable body: ${String(error)}`, response.status, { cause: error });
     }
   }
@@ -261,17 +265,6 @@ export class ExaAdapter {
     return { sources, truncated: false };
   }
 
-  _parseRetryAfter(response) {
-    const header = response.headers?.get?.('retry-after');
-    if (header != null && header.length > 0) {
-      const seconds = Number(header);
-      if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
-      const date = Date.parse(header);
-      if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
-    }
-    return this.retryAfterFallbackMs;
-  }
-
   _map(data) {
     const results = Array.isArray(data.results) ? data.results : [];
     const sources = results.map((r) => {
@@ -285,6 +278,21 @@ export class ExaAdapter {
 
     return { sources, truncated: false };
   }
+}
+
+/**
+ * 按 SSE 规范从响应文本提取事件数据：收集全部 `data:` 行（去字段名后可选的一个前导空格），
+ * 以 `\n` 拼接。无 `data:` 行时返回 null（调用方回退用原文解析），多帧/单行/无空格写法都兼容。
+ * @param {string} text
+ * @returns {string|null}
+ */
+function extractSseData(text) {
+  const lines = text.split('\n');
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, '').replace(/\r$/, ''));
+  }
+  return dataLines.length > 0 ? dataLines.join('\n') : null;
 }
 
 function matchField(block, name) {

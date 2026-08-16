@@ -38,19 +38,12 @@ export class RateLimitError extends SearchPoolError {
 export class ProviderHttpError extends SearchPoolError {
   /**
    * @param {string} message
-   * @param {number} status HTTP 状态码；网络失败时为 0。
+   * @param {number} status HTTP 状态码；网络失败/超时时为 0。
    * @param {ErrorOptions} [options]
    */
   constructor(message, status, options) {
     super(message, 'PROVIDER_HTTP', options);
     this.status = status;
-  }
-}
-
-/** 所有候选 key 均不可用（全部冷却或令牌耗尽），无可再试。 */
-export class NoUsableKeyError extends SearchPoolError {
-  constructor(message = 'no usable search key is available', options) {
-    super(message, 'NO_USABLE_KEY', options);
   }
 }
 

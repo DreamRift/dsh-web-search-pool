@@ -11,7 +11,7 @@
 import z from '@deepseek-ai/schemastery';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
-import { PROVIDER_TAVILY, PROVIDER_EXA } from '../core/constants.js';
+import { PROVIDER_TAVILY, PROVIDER_EXA, DEFAULTS } from '../core/constants.js';
 
 /** 单个 key 的描述。`id` 可选（缺省用 `${provider}:${apiKeyEnv}`）。 */
 const keySpec = z.object({
@@ -59,24 +59,26 @@ const usageSpec = z.object({
   })).default([]),
 }).default({ updatedAt: 0, totalUsed: 0, totalLimit: 0, keys: [] });
 
-/** 插件的配置 schema（同时是 settings namespace 的 schema）。 */
+/** 插件的配置 schema（同时是 settings namespace 的 schema；默认值统一取自 core 的 `DEFAULTS`）。 */
 export const Config = z.object({
   enabled: z.boolean().default(true),
   providers: z.object({
     tavily: tavilySpec,
     exa: exaSpec,
   }),
-  strategy: z.union(['weighted-round-robin', 'least-used']).default('weighted-round-robin'),
-  providerPriority: z.array(z.union(['tavily', 'exa'])).default(['tavily', 'exa']),
-  allowedFails: z.number().step(1).min(1).default(3),
-  cooldownMs: z.number().min(0).default(30_000),
-  retryAfterFallbackMs: z.number().min(0).default(1_000),
+  strategy: z.union(['weighted-round-robin', 'least-used']).default(DEFAULTS.strategy),
+  providerPriority: z.array(z.union(['tavily', 'exa'])).default(DEFAULTS.providerPriority),
+  allowedFails: z.number().step(1).min(1).default(DEFAULTS.allowedFails),
+  cooldownMs: z.number().min(0).default(DEFAULTS.cooldownMs),
+  retryAfterFallbackMs: z.number().min(0).default(DEFAULTS.retryAfterFallbackMs),
   /** Tavily `/usage` 缓存刷新间隔（毫秒）。 */
-  usageCacheMs: z.number().min(0).default(300_000),
+  usageCacheMs: z.number().min(0).default(DEFAULTS.usageCacheMs),
   /** 判定“不够下一次使用”的保留额度（Tavily advanced search 为 2 credits）。 */
-  quotaReserveCredits: z.number().min(0).default(2),
+  quotaReserveCredits: z.number().min(0).default(DEFAULTS.quotaReserveCredits),
   /** 额度耗尽后的长冷却时长（毫秒），额度恢复并刷新后自动解除。 */
-  quotaExhaustedCooldownMs: z.number().min(0).default(30 * 24 * 60 * 60 * 1000),
+  quotaExhaustedCooldownMs: z.number().min(0).default(DEFAULTS.quotaExhaustedCooldownMs),
+  /** 单次搜索请求（每个 key 尝试）的超时（毫秒）；0 表示禁用，超时按 key 失败处理并自动换 key。 */
+  requestTimeoutMs: z.number().min(0).default(DEFAULTS.requestTimeoutMs),
   /** 手动刷新计数：Client 点“立即刷新”时 +1，Host 检测变化后重新查 /usage。 */
   usageRefreshTick: z.number().step(1).min(0).default(0),
   /** 额度发布诊断（Host 写入；为空表示上次发布成功）。 */
@@ -109,7 +111,7 @@ export function resolveOptions(ctx, config) {
       id: key.id ?? `tavily:${key.apiKeyEnv}`,
       provider: PROVIDER_TAVILY,
       credentialRef: credentialRef(key.apiKeyEnv),
-      rpm: key.rpm ?? 60,
+      rpm: key.rpm ?? DEFAULTS.rpmFallback,
       ...key.remark != null && key.remark.length > 0 ? { remark: key.remark } : {},
     });
   }
@@ -123,7 +125,7 @@ export function resolveOptions(ctx, config) {
       id: key.id ?? (ref.length > 0 ? `exa:${ref}` : `exa:anonymous:${index}`),
       provider: PROVIDER_EXA,
       ...(ref.length > 0 ? { credentialRef: credentialRef(ref) } : { anonymous: true }),
-      rpm: key.rpm ?? 60,
+      rpm: key.rpm ?? DEFAULTS.rpmFallback,
       ...key.remark != null && key.remark.length > 0 ? { remark: key.remark } : {},
     });
   }
@@ -132,14 +134,15 @@ export function resolveOptions(ctx, config) {
     enabled: config.enabled ?? true,
     available: entries.length > 0 && (config.enabled ?? true),
     entries,
-    strategy: config.strategy ?? 'weighted-round-robin',
-    providerPriority: config.providerPriority ?? ['tavily', 'exa'],
-    allowedFails: config.allowedFails ?? 3,
-    cooldownMs: config.cooldownMs ?? 30_000,
-    retryAfterFallbackMs: config.retryAfterFallbackMs ?? 1_000,
-    usageCacheMs: config.usageCacheMs ?? 300_000,
-    quotaReserveCredits: config.quotaReserveCredits ?? 2,
-    quotaExhaustedCooldownMs: config.quotaExhaustedCooldownMs ?? 30 * 24 * 60 * 60 * 1000,
+    strategy: config.strategy ?? DEFAULTS.strategy,
+    providerPriority: config.providerPriority ?? DEFAULTS.providerPriority,
+    allowedFails: config.allowedFails ?? DEFAULTS.allowedFails,
+    cooldownMs: config.cooldownMs ?? DEFAULTS.cooldownMs,
+    retryAfterFallbackMs: config.retryAfterFallbackMs ?? DEFAULTS.retryAfterFallbackMs,
+    usageCacheMs: config.usageCacheMs ?? DEFAULTS.usageCacheMs,
+    quotaReserveCredits: config.quotaReserveCredits ?? DEFAULTS.quotaReserveCredits,
+    quotaExhaustedCooldownMs: config.quotaExhaustedCooldownMs ?? DEFAULTS.quotaExhaustedCooldownMs,
+    requestTimeoutMs: config.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs,
     /** Tavily 高级功能原始配置（保留 'auto'/'off' 标记，provider 结合 query 意图解析）。 */
     tavilyParams: {
       searchDepth: tavily.searchDepth ?? 'advanced',

@@ -78,7 +78,7 @@ function matchDomains(q) {
 
 /** 主题词 → Tavily `topic`（news / finance）。财经词更具体，优先判断。 */
 function matchTopic(lower) {
-  if (/股票|财经|金融|股价|股市|行情|证券|基金|基金|\bstocks?\b|\bfinance\b|\bipo\b/.test(lower)) return 'finance';
+  if (/股票|财经|金融|股价|股市|行情|证券|基金|\bstocks?\b|\bfinance\b|\bipo\b/.test(lower)) return 'finance';
   if (/新闻|资讯|头条|\bnews\b|\bheadlines?\b/.test(lower)) return 'news';
   return null;
 }

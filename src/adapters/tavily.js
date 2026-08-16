@@ -1,6 +1,6 @@
 /**
  * Tavily 搜索适配器。统一接口 `search({ query, apiKey, maxResults, signal, ...高级参数 }) => SearchResult`。
- * 不依赖 DSH，只依赖核心库错误类型与宿主 fetch（可注入以便单测）。
+ * 不依赖 DSH，只依赖核心库错误类型与共享 HTTP 工具（宿主 fetch 可注入以便单测）。
  *
  * 高级功能（默认打开，对齐官方文档与 agent 友好组合）：
  *   - `search_depth: advanced`（深度提取）
@@ -11,11 +11,12 @@
  * @module search-pool/adapters/tavily
  */
 
-import { RateLimitError, ProviderHttpError, isAbortError } from '../core/errors.js';
+import { RateLimitError, ProviderHttpError } from '../core/errors.js';
+import { parseRetryAfter, rethrowIfAborted, discardBody } from '../core/http-utils.js';
 
 const TAVILY_ENDPOINT = 'https://api.tavily.com/search';
 const TAVILY_USAGE_ENDPOINT = 'https://api.tavily.com/usage';
-const USER_AGENT = 'dsh-web-search-pool/0.1.0';
+const USER_AGENT = 'dsh-web-search-pool/0.2.0';
 
 export class TavilyAdapter {
   /**
@@ -47,14 +48,16 @@ export class TavilyAdapter {
         ...(signal !== undefined ? { signal } : {}),
       });
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Tavily usage request failed: ${String(error)}`, 0, { cause: error });
     }
 
     if (response.status === 429) {
-      throw new RateLimitError('Tavily usage rate limited (HTTP 429)', this._parseRetryAfter(response));
+      await discardBody(response);
+      throw new RateLimitError('Tavily usage rate limited (HTTP 429)', parseRetryAfter(response, this.retryAfterFallbackMs));
     }
     if (!response.ok) {
+      await discardBody(response);
       throw new ProviderHttpError(`Tavily usage error (HTTP ${response.status})`, response.status);
     }
 
@@ -62,7 +65,7 @@ export class TavilyAdapter {
     try {
       data = await response.json();
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Tavily returned an unprocessable usage body: ${String(error)}`, response.status, { cause: error });
     }
     const account = data.account ?? {};
@@ -123,14 +126,16 @@ export class TavilyAdapter {
         ...(signal !== undefined ? { signal } : {}),
       });
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Tavily request failed: ${String(error)}`, 0, { cause: error });
     }
 
     if (response.status === 429) {
-      throw new RateLimitError('Tavily rate limited (HTTP 429)', this._parseRetryAfter(response));
+      await discardBody(response);
+      throw new RateLimitError('Tavily rate limited (HTTP 429)', parseRetryAfter(response, this.retryAfterFallbackMs));
     }
     if (!response.ok) {
+      await discardBody(response);
       throw new ProviderHttpError(`Tavily API error (HTTP ${response.status})`, response.status);
     }
 
@@ -138,22 +143,10 @@ export class TavilyAdapter {
     try {
       data = await response.json();
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted === true) throw error;
+      rethrowIfAborted(error, signal);
       throw new ProviderHttpError(`Tavily returned an unprocessable body: ${String(error)}`, response.status, { cause: error });
     }
     return this._map(data);
-  }
-
-  /** 解析 Retry-After：优先秒数，其次 HTTP 日期；都不行回退默认值。 */
-  _parseRetryAfter(response) {
-    const header = response.headers?.get?.('retry-after');
-    if (header != null && header.length > 0) {
-      const seconds = Number(header);
-      if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
-      const date = Date.parse(header);
-      if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
-    }
-    return this.retryAfterFallbackMs;
   }
 
   _map(data) {

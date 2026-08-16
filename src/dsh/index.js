@@ -20,19 +20,18 @@ export const inject = ['web'];
 /** settings namespace：`web-search-pool`。 */
 export const SETTINGS_NAMESPACE = settingsNamespace('web-search-pool');
 
-/** 最近一次同步到 `include:web` 的 enabled 值，避免运行时 usage 写入重复触发 loader。 */
-let lastSyncedEnabled = null;
-
 /**
  * @param {object} ctx 插件上下文。
  * @param {object} config composition 配置（作为 settings section 的 base 层）。
+ * @returns {() => void} dispose：插件停止时注销事件监听并释放 provider 状态。
  */
 export function apply(ctx, config) {
   let current = () => config;
   let lastRefreshTick = null;
   let settingsService = null;
   let pendingUsage = null;
-  lastSyncedEnabled = null;
+  // 最近一次同步到 `include:web` 的 enabled 值（apply 闭包内，避免模块级状态跨实例串扰）。
+  let lastSyncedEnabled = null;
 
   async function writeUsage(snapshot, diagnostic = '') {
     if (settingsService == null) return false;
@@ -64,6 +63,7 @@ export function apply(ctx, config) {
     settingsService = sctx.settings;
     if (pendingUsage != null) {
       const { snapshot, diagnostic } = pendingUsage;
+      pendingUsage = null;
       writeUsage(snapshot, diagnostic).catch((error) => {
         ctx.logger?.warn?.(`search-pool: deferred usage publish failed: ${String(error?.message ?? error)}`);
       });
@@ -102,26 +102,32 @@ export function apply(ctx, config) {
   // installSettingsSection 的 scope.watch 在某些 include/loader 场景下可能因
   // 插件上下文状态而跳过回调；settings/updated 是更底层的广播，用它兜底，
   // 确保 Client 点击“立即刷新”递增 usageRefreshTick 后 Host 一定会刷新额度。
-  ctx.on('settings/updated', (ns, next) => {
+  const onSettingsUpdated = (ns, next) => {
     if (ns !== SETTINGS_NAMESPACE) return;
     handleSettingsChange(next);
-  });
+  };
+  ctx.on('settings/updated', onSettingsUpdated);
   ctx.web.registerSearchProvider(provider);
   syncSearchProvider(ctx, config?.enabled ?? true);
-}
 
-/**
- * 根据开关同步 `web` 的 `searchProvider`：开启用 search-pool，关闭用 deepseek-official。
- * `web` row 在 include 子树里，完整 id 为 `include:web`；通过 loader 更新其 config。
- * 只在 enabled 值变化时同步，避免运行时 usage 写入 settings 时重复触发 loader。
- */
-function syncSearchProvider(ctx, enabled) {
-  if (lastSyncedEnabled === enabled) return;
-  lastSyncedEnabled = enabled;
-  const loader = ctx.get('loader');
-  if (loader === undefined || typeof loader.update !== 'function') return;
-  const providerId = enabled ? SEARCH_POOL_PROVIDER_ID : 'deepseek-official';
-  Promise.resolve(loader.update('include:web', { config: { searchProvider: providerId } })).catch((error) => {
-    ctx.logger?.warn?.(`search-pool: failed to sync web.searchProvider to "${providerId}": ${String(error?.message ?? error)}`);
-  });
+  /**
+   * 根据开关同步 `web` 的 `searchProvider`：开启用 search-pool，关闭用 deepseek-official。
+   * `web` row 在 include 子树里，完整 id 为 `include:web`；通过 loader 更新其 config。
+   * 只在 enabled 值变化时同步，避免运行时 usage 写入 settings 时重复触发 loader。
+   */
+  function syncSearchProvider(ctx2, enabled) {
+    if (lastSyncedEnabled === enabled) return;
+    lastSyncedEnabled = enabled;
+    const loader = ctx2.get('loader');
+    if (loader === undefined || typeof loader.update !== 'function') return;
+    const providerId = enabled ? SEARCH_POOL_PROVIDER_ID : 'deepseek-official';
+    Promise.resolve(loader.update('include:web', { config: { searchProvider: providerId } })).catch((error) => {
+      ctx2.logger?.warn?.(`search-pool: failed to sync web.searchProvider to "${providerId}": ${String(error?.message ?? error)}`);
+    });
+  }
+
+  return function dispose() {
+    ctx.off?.('settings/updated', onSettingsUpdated);
+    provider.dispose();
+  };
 }

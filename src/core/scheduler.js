@@ -51,13 +51,8 @@ export class Scheduler {
 
     if (this.strategy === STRATEGY_LEAST_USED) {
       // 剩余令牌最多的优先（即「最少使用」的 key 优先）。
-      const ordered = [...candidates].sort(
-        (a, b) => this.rateLimiter.tokens(b.id, now) - this.rateLimiter.tokens(a.id, now),
-      );
-      for (const entry of ordered) {
-        if (this.rateLimiter.tryAcquire(entry.id, now)) return entry;
-      }
-      return null;
+      // 单遍选最大（相等取先出现者，与稳定降序排序语义一致），避免数组复制与排序分配。
+      return this._acquireByRank(candidates, now, (id) => this.rateLimiter.tokens(id, now));
     }
 
     // weighted-round-robin：smooth WRR。
@@ -65,18 +60,41 @@ export class Scheduler {
     // 令牌不足的候选本轮不减 total，其 currentWeight 持续累积，令牌恢复后会被优先选中（平滑语义）。
     let total = 0;
     for (const e of candidates) {
-      const weight = Math.max(1, e.rpm);
+      const weight = Math.max(1, e.rpm); // 下限 1：rpm 缺省/为 0 时仍保证公平参与轮转。
       this._currentWeight.set(e.id, (this._currentWeight.get(e.id) ?? 0) + weight);
       total += weight;
     }
-    const ordered = [...candidates].sort(
-      (a, b) => (this._currentWeight.get(b.id) ?? 0) - (this._currentWeight.get(a.id) ?? 0),
-    );
-    for (const entry of ordered) {
-      if (this.rateLimiter.tryAcquire(entry.id, now)) {
-        this._currentWeight.set(entry.id, (this._currentWeight.get(entry.id) ?? 0) - total);
-        return entry;
+    const entry = this._acquireByRank(candidates, now, (id) => this._currentWeight.get(id) ?? 0);
+    if (entry != null) {
+      this._currentWeight.set(entry.id, (this._currentWeight.get(entry.id) ?? 0) - total);
+    }
+    return entry;
+  }
+
+  /**
+   * 按 `rankOf` 降序依次尝试 `tryAcquire`：单遍选出当前排名最高的候选，
+   * 令牌不足则排除后重选。最坏 O(n²)（全部令牌耗尽时），常见路径首轮即命中。
+   * @param {object[]} candidates 未冷却候选。
+   * @param {number} now
+   * @param {(id: string) => number} rankOf 排名值（越大越优先）。
+   * @returns {object|null}
+   */
+  _acquireByRank(candidates, now, rankOf) {
+    const excluded = new Set();
+    while (excluded.size < candidates.length) {
+      let best = null;
+      let bestRank = -Infinity;
+      for (const e of candidates) {
+        if (excluded.has(e.id)) continue;
+        const rank = rankOf(e.id);
+        if (rank > bestRank) {
+          bestRank = rank;
+          best = e;
+        }
       }
+      if (best == null) return null;
+      if (this.rateLimiter.tryAcquire(best.id, now)) return best;
+      excluded.add(best.id);
     }
     return null;
   }

@@ -25,6 +25,12 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag);
     }
 
+    /** 刷新提示自动消失与按钮恢复的时长（毫秒）。 */
+    var NOTE_AUTO_CLEAR_MS = 15000;
+    var REFRESH_BUTTON_REARM_MS = 5000;
+    /** 额度耗尽长冷却的默认值（30 天，毫秒），与 Host 侧 DEFAULTS 对齐。 */
+    var THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
     var CHEVRON_D = "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z";
 
     function Chevron(props) {
@@ -47,7 +53,8 @@ window.__ModuleLoader__.load({
         retryAfterFallbackMs: String(config.retryAfterFallbackMs != null ? config.retryAfterFallbackMs : 1000),
         usageCacheMs: String(config.usageCacheMs != null ? config.usageCacheMs : 300000),
         quotaReserveCredits: String(config.quotaReserveCredits != null ? config.quotaReserveCredits : 2),
-        quotaExhaustedHours: String((config.quotaExhaustedCooldownMs != null ? config.quotaExhaustedCooldownMs : 2592000000) / 3600000),
+        quotaExhaustedHours: String((config.quotaExhaustedCooldownMs != null ? config.quotaExhaustedCooldownMs : THIRTY_DAYS_MS) / 3600000),
+        requestTimeoutMs: String(config.requestTimeoutMs != null ? config.requestTimeoutMs : 20000),
         tavilyKeys: (config.providers && config.providers.tavily && Array.isArray(config.providers.tavily.keys) ? config.providers.tavily.keys : []).map(function (k, index) {
           return { _uid: "t" + index, apiKeyEnv: k.apiKeyEnv || "", rpm: String(k.rpm != null ? k.rpm : 60), remark: k.remark || "" };
         }),
@@ -106,6 +113,20 @@ window.__ModuleLoader__.load({
       var refreshNote = refreshNoteState[0];
       var setRefreshNote = refreshNoteState[1];
 
+      // ── 定时器管理：全部经 setLater 登记，组件卸载时统一清理，避免泄漏与卸载后 setState ──
+      var timers = react.useRef([]);
+      function setLater(fn, ms) {
+        var id = window.setTimeout(fn, ms);
+        timers.current.push(id);
+        return id;
+      }
+      react.useEffect(function () {
+        return function () {
+          timers.current.forEach(function (id) { window.clearTimeout(id); });
+          timers.current = [];
+        };
+      }, []);
+
       react.useEffect(function () {
         setSnapshot(scope.getSnapshot());
         return scope.subscribe(function () { setSnapshot(scope.getSnapshot()); });
@@ -114,12 +135,16 @@ window.__ModuleLoader__.load({
       var status = snapshot ? snapshot.status : "loading";
       var config = snapshot && snapshot.value ? snapshot.value : null;
 
+      // describeCredentials 的序号守卫：并发调用/卸载后返回的过期响应直接丢弃，防止旧状态覆盖新状态。
+      var credSeq = react.useRef(0);
       function describeCredentials(refs) {
         if (api == null || refs.length === 0) {
           setCredentials({});
           return;
         }
+        var seq = ++credSeq.current;
         api.credentials.describe({ refs: refs }).then(function (response) {
+          if (seq !== credSeq.current) return;
           if (!response || !response.result || !response.result.ok) return;
           var next = {};
           refs.forEach(function (ref) {
@@ -127,7 +152,10 @@ window.__ModuleLoader__.load({
             next[ref] = { configured: !!(view && view.configured), writable: !!(view && view.writable !== false) };
           });
           setCredentials(next);
-        }).catch(function () {});
+        }).catch(function (e) {
+          if (seq !== credSeq.current) return;
+          console.warn("search-pool: describe credentials failed", e);
+        });
       }
 
       react.useEffect(function () {
@@ -176,26 +204,47 @@ window.__ModuleLoader__.load({
             return;
           }
         }
-        function commitSettings() {
-          scope.set("strategy", draft.strategy);
-          scope.set("providerPriority", draft.providerPriority);
-          scope.set("allowedFails", toNumber(draft.allowedFails, 3));
-          scope.set("cooldownMs", toNumber(draft.cooldownMs, 30000));
-          scope.set("retryAfterFallbackMs", toNumber(draft.retryAfterFallbackMs, 1000));
-          scope.set("usageCacheMs", toNumber(draft.usageCacheMs, 300000));
-          scope.set("quotaReserveCredits", toNumber(draft.quotaReserveCredits, 2));
-          scope.set("quotaExhaustedCooldownMs", Math.round(toNumber(draft.quotaExhaustedHours, 720) * 3600000));
-          scope.set("providers", {
-            tavily: Object.assign({}, config.providers && config.providers.tavily ? config.providers.tavily : {}, {
-              keys: draft.tavilyKeys.map(function (k) { return Object.assign({ apiKeyEnv: k.apiKeyEnv, rpm: toNumber(k.rpm, 60) }, k.remark && k.remark.length > 0 ? { remark: k.remark } : {}); })
-            }),
-            exa: Object.assign({}, config.providers && config.providers.exa ? config.providers.exa : {}, {
-              keys: draft.exaKeys.map(function (k) { return Object.assign({ apiKeyEnv: k.apiKeyEnv, rpm: toNumber(k.rpm, 60) }, k.remark && k.remark.length > 0 ? { remark: k.remark } : {}); })
-            })
-          });
+        function afterCommit() {
           setSecretDrafts({});
           describeCredentials(liveRefs);
           closeCard();
+        }
+        function commitSettings() {
+          var values = {
+            strategy: draft.strategy,
+            providerPriority: draft.providerPriority,
+            allowedFails: toNumber(draft.allowedFails, 3),
+            cooldownMs: toNumber(draft.cooldownMs, 30000),
+            retryAfterFallbackMs: toNumber(draft.retryAfterFallbackMs, 1000),
+            usageCacheMs: toNumber(draft.usageCacheMs, 300000),
+            quotaReserveCredits: toNumber(draft.quotaReserveCredits, 2),
+            quotaExhaustedCooldownMs: Math.round(toNumber(draft.quotaExhaustedHours, 720) * 3600000),
+            requestTimeoutMs: toNumber(draft.requestTimeoutMs, 20000),
+            providers: {
+              tavily: Object.assign({}, config.providers && config.providers.tavily ? config.providers.tavily : {}, {
+                keys: draft.tavilyKeys.map(function (k) { return Object.assign({ apiKeyEnv: k.apiKeyEnv, rpm: toNumber(k.rpm, 60) }, k.remark && k.remark.length > 0 ? { remark: k.remark } : {}); })
+              }),
+              exa: Object.assign({}, config.providers && config.providers.exa ? config.providers.exa : {}, {
+                keys: draft.exaKeys.map(function (k) { return Object.assign({ apiKeyEnv: k.apiKeyEnv, rpm: toNumber(k.rpm, 60) }, k.remark && k.remark.length > 0 ? { remark: k.remark } : {}); })
+              })
+            }
+          };
+          if (api != null && api.settings != null && typeof api.settings.mutate === "function") {
+            // 单次事务提交全部字段（多个 op 一次 mutate），避免逐字段 set 造成的
+            // 多次 revision 冲突面与多次更新广播。
+            api.settings.mutate({
+              ns: "web-search-pool",
+              ops: Object.keys(values).map(function (key) {
+                return { op: "set", path: [key], value: values[key] };
+              })
+            }).then(afterCommit).catch(function (e) {
+              setSaveError("保存设置失败：" + String(e && e.message || e));
+            });
+            return;
+          }
+          // 回退路径（无 api.settings）：逐字段 scope.set。
+          Object.keys(values).forEach(function (key) { scope.set(key, values[key]); });
+          afterCommit();
         }
         if (secretWrites.length === 0) {
           commitSettings();
@@ -206,33 +255,43 @@ window.__ModuleLoader__.load({
         });
       }
 
+      var noteTimer = react.useRef(null);
+      var rearmTimer = react.useRef(null);
+      function showRefreshNote(text) {
+        setRefreshNote(text);
+        if (noteTimer.current != null) window.clearTimeout(noteTimer.current);
+        noteTimer.current = setLater(function () {
+          noteTimer.current = null;
+          setRefreshNote(null);
+        }, NOTE_AUTO_CLEAR_MS);
+      }
       function refreshUsage() {
         if (config == null || refreshing) return;
         setRefreshing(true);
+        if (rearmTimer.current != null) window.clearTimeout(rearmTimer.current);
+        rearmTimer.current = setLater(function () {
+          rearmTimer.current = null;
+          setRefreshing(false);
+        }, REFRESH_BUTTON_REARM_MS);
         var tick = (config.usageRefreshTick != null ? config.usageRefreshTick : 0) + 1;
-        function noteError(e) {
-          setRefreshNote("刷新请求失败：" + String(e && e.message || e));
-          window.setTimeout(function () { setRefreshNote(null); }, 15000);
-        }
-        function noteSent() {
-          setRefreshNote("已请求刷新，等待 Host 回写…");
-          window.setTimeout(function () { setRefreshNote(null); }, 15000);
-        }
         if (api != null && api.settings != null && typeof api.settings.mutate === "function") {
           // 不带 expectedRevision，避免 Host 刚写 usage 导致 revision 冲突而点击无反应。
           api.settings.mutate({
             ns: "web-search-pool",
             ops: [{ op: "set", path: ["usageRefreshTick"], value: tick }],
-          }).then(noteSent).catch(noteError);
+          }).then(function () {
+            showRefreshNote("已请求刷新，等待 Host 回写…");
+          }).catch(function (e) {
+            showRefreshNote("刷新请求失败：" + String(e && e.message || e));
+          });
         } else {
           try {
             scope.set("usageRefreshTick", tick);
-            noteSent();
+            showRefreshNote("已请求刷新，等待 Host 回写…");
           } catch (e) {
-            noteError(e);
+            showRefreshNote("刷新请求失败：" + String(e && e.message || e));
           }
         }
-        window.setTimeout(function () { setRefreshing(false); }, 5000);
       }
 
       function closeCard() {
@@ -249,10 +308,6 @@ window.__ModuleLoader__.load({
           setSaveError(null);
         }
         setOpen(!open);
-      }
-
-      function cancelCard() {
-        closeCard();
       }
 
       function setField(field, value) {
@@ -406,6 +461,25 @@ window.__ModuleLoader__.load({
         );
       }
 
+      /** 「标签 + 控件 + 单位提示」一行的统一结构（熔断/额度控制等表单区复用）。 */
+      function metricRow(label, control, hint) {
+        return react.createElement("div", { className: "sp-metricRow" },
+          react.createElement("label", { className: "sp-fieldLabel" }, label),
+          control,
+          hint || null
+        );
+      }
+
+      function numberInput(value, placeholder, onChange) {
+        return react.createElement("input", {
+          className: "sp-input sp-metricInput",
+          value: value,
+          inputMode: "numeric",
+          placeholder: placeholder,
+          onChange: onChange
+        });
+      }
+
       var tavilyKeys = draft != null ? draft.tavilyKeys : [];
       var exaKeys = draft != null ? draft.exaKeys : [];
 
@@ -470,39 +544,30 @@ window.__ModuleLoader__.load({
           ) : null,
           draft != null ? react.createElement("div", { className: "sp-field" },
             fieldHead("熔断 / 冷却"),
-            react.createElement("div", { className: "sp-metricRow" },
-              react.createElement("label", { className: "sp-fieldLabel" }, "连续失败次数"),
-              react.createElement("input", { className: "sp-input sp-metricInput", value: draft.allowedFails, inputMode: "numeric", placeholder: "3", onChange: function (e) { setField("allowedFails", e.target.value); } })
-            ),
-            react.createElement("div", { className: "sp-metricRow" },
-              react.createElement("label", { className: "sp-fieldLabel" }, "冷却时长"),
-              react.createElement("input", { className: "sp-input sp-metricInput", value: draft.cooldownMs, inputMode: "numeric", placeholder: "30000", onChange: function (e) { setField("cooldownMs", e.target.value); } }),
-              react.createElement("span", { className: "sp-hint" }, "毫秒")
-            ),
-            react.createElement("div", { className: "sp-metricRow" },
-              react.createElement("label", { className: "sp-fieldLabel" }, "失败后等待"),
-              react.createElement("input", { className: "sp-input sp-metricInput", value: draft.retryAfterFallbackMs, inputMode: "numeric", placeholder: "1000", onChange: function (e) { setField("retryAfterFallbackMs", e.target.value); } }),
-              react.createElement("span", { className: "sp-hint" }, "毫秒，429 无 Retry-After 时用")
-            ),
+            metricRow("连续失败次数",
+              numberInput(draft.allowedFails, "3", function (e) { setField("allowedFails", e.target.value); })),
+            metricRow("冷却时长",
+              numberInput(draft.cooldownMs, "30000", function (e) { setField("cooldownMs", e.target.value); }),
+              react.createElement("span", { className: "sp-hint" }, "毫秒")),
+            metricRow("失败后等待",
+              numberInput(draft.retryAfterFallbackMs, "1000", function (e) { setField("retryAfterFallbackMs", e.target.value); }),
+              react.createElement("span", { className: "sp-hint" }, "毫秒，429 无 Retry-After 时用")),
+            metricRow("请求超时",
+              numberInput(draft.requestTimeoutMs, "20000", function (e) { setField("requestTimeoutMs", e.target.value); }),
+              react.createElement("span", { className: "sp-hint" }, "毫秒，0 禁用；超时自动换下一个 key")),
             react.createElement("p", { className: "sp-hint" }, "连续失败达到次数后冷却；429 的 Retry-After 会覆盖冷却时长。")
           ) : null,
           draft != null ? react.createElement("div", { className: "sp-field" },
             fieldHead("额度控制"),
-            react.createElement("div", { className: "sp-metricRow" },
-              react.createElement("label", { className: "sp-fieldLabel" }, "刷新间隔"),
-              react.createElement("input", { className: "sp-input sp-metricInput", value: draft.usageCacheMs, inputMode: "numeric", placeholder: "300000", onChange: function (e) { setField("usageCacheMs", e.target.value); } }),
-              react.createElement("span", { className: "sp-hint" }, "毫秒")
-            ),
-            react.createElement("div", { className: "sp-metricRow" },
-              react.createElement("label", { className: "sp-fieldLabel" }, "保留下次额度"),
-              react.createElement("input", { className: "sp-input sp-metricInput", value: draft.quotaReserveCredits, inputMode: "numeric", placeholder: "2", onChange: function (e) { setField("quotaReserveCredits", e.target.value); } }),
-              react.createElement("span", { className: "sp-hint" }, "credits，Tavily advanced 搜索为 2")
-            ),
-            react.createElement("div", { className: "sp-metricRow" },
-              react.createElement("label", { className: "sp-fieldLabel" }, "额度耗尽长冷却"),
-              react.createElement("input", { className: "sp-input sp-metricInput", value: draft.quotaExhaustedHours, inputMode: "numeric", placeholder: "720", onChange: function (e) { setField("quotaExhaustedHours", e.target.value); } }),
-              react.createElement("span", { className: "sp-hint" }, "小时，默认 720（30 天）")
-            ),
+            metricRow("刷新间隔",
+              numberInput(draft.usageCacheMs, "300000", function (e) { setField("usageCacheMs", e.target.value); }),
+              react.createElement("span", { className: "sp-hint" }, "毫秒")),
+            metricRow("保留下次额度",
+              numberInput(draft.quotaReserveCredits, "2", function (e) { setField("quotaReserveCredits", e.target.value); }),
+              react.createElement("span", { className: "sp-hint" }, "credits，Tavily advanced 搜索为 2")),
+            metricRow("额度耗尽长冷却",
+              numberInput(draft.quotaExhaustedHours, "720", function (e) { setField("quotaExhaustedHours", e.target.value); }),
+              react.createElement("span", { className: "sp-hint" }, "小时，默认 720（30 天）")),
             react.createElement("p", { className: "sp-hint" }, "Tavily 剩余额度低于保留值时自动进入长冷却；额度刷新恢复后自动解除。")
           ) : null,
           draft != null ? react.createElement("div", { className: "sp-field" },
@@ -520,7 +585,7 @@ window.__ModuleLoader__.load({
             react.createElement("p", { className: "sp-hint", style: { color: "var(--dsw-alias-label-error)" } }, saveError)
           ) : null,
           draft != null ? react.createElement("div", { className: "sp-footer" },
-            react.createElement("button", { type: "button", className: "sp-discard", onClick: cancelCard }, "取消"),
+            react.createElement("button", { type: "button", className: "sp-discard", onClick: closeCard }, "取消"),
             react.createElement("button", { type: "button", className: "sp-save", onClick: save }, "保存")
           ) : null
         ) : null

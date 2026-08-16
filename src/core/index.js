@@ -5,6 +5,7 @@
 
 export * from './constants.js';
 export * from './errors.js';
+export * from './http-utils.js';
 export * from './key-pool.js';
 export * from './query-intent.js';
 export * from './rate-limiter.js';
