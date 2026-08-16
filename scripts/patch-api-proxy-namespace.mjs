@@ -49,8 +49,14 @@ export function findApiProxyIndex() {
 }
 
 /**
- * 纯函数：构造把 `ns` 追加到 WEB_SETTINGS_NAMESPACES 锚点行之后的补丁内容。
- * 自适应锚点行缩进（Tab/空格）与换行风格（CRLF/LF）；锚点行缺尾随逗号时补上。
+ * 纯函数：构造把 `ns` 追加到 WEB_SETTINGS_NAMESPACES 的补丁内容。
+ *
+ * v3（2026-08-16 事故修复）：改为**数组末尾插入**——定位数组闭合 `]`，把新条目插在
+ * 最后一个元素之后。旧版（含 v2）在锚点行 `"web-search-deepseek"` 之后插入，当本机
+ * 其它插件（如 dsh-vision-bridge）的白名单脚本已在该行后插入过条目时，会把新条目
+ * 插到中间且缺尾逗号（或双逗号），产生语法错误导致 dsh-host-apiproxy 加载失败、
+ * DSH 启动失败。数组末尾插入对任意尾逗号状态都安全，多脚本先后运行互不影响。
+ * 写入前仍由调用方做 `node --check` 语法校验兜底。
  *
  * @param {string} source 目标文件原文。
  * @param {string} ns 要加入白名单的 namespace。
@@ -60,25 +66,25 @@ export function buildPatchedSource(source, ns) {
   const NS = JSON.stringify(ns);
   if (source.includes(NS)) return { ok: true, alreadyApplied: true };
 
-  const ANCHOR = '"web-search-deepseek"';
-  const anchorIdx = source.indexOf(ANCHOR);
-  if (anchorIdx === -1) {
-    return { ok: false, error: `未找到白名单锚点 ${ANCHOR}，文件结构可能已变化` };
+  const ARRAY_DECL = 'WEB_SETTINGS_NAMESPACES';
+  const declIdx = source.indexOf(ARRAY_DECL);
+  if (declIdx === -1) {
+    return { ok: false, error: `未找到 ${ARRAY_DECL} 声明，文件结构可能已变化` };
   }
-  const lineStart = source.lastIndexOf('\n', anchorIdx) + 1;
-  const lineEndIdx = source.indexOf('\n', anchorIdx + ANCHOR.length);
-  const lineEnd = lineEndIdx === -1 ? source.length : lineEndIdx;
-  // CRLF 时行内容结束在 '\r' 之前，插入点必须落在 '\r' 前（否则产生 \r\r\n 双 CR）。
-  const contentEnd = lineEnd > 0 && source[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd;
-
-  const line = source.slice(lineStart, contentEnd);
-  const indentMatch = line.match(/^[ \t]*/);
+  const openIdx = source.indexOf('[', declIdx);
+  const closeIdx = source.indexOf(']', openIdx);
+  if (openIdx === -1 || closeIdx === -1) {
+    return { ok: false, error: `${ARRAY_DECL} 数组结构异常` };
+  }
+  // 末条目的缩进与文件换行风格（CRLF/LF）。
+  const lastLineStart = source.lastIndexOf('\n', closeIdx) + 1;
+  const indentMatch = source.slice(lastLineStart, closeIdx).match(/^[ \t]*/);
   const indent = indentMatch != null && indentMatch[0].length > 0 ? indentMatch[0] : '\t';
-  const eol = contentEnd !== lineEnd ? '\r\n' : '\n';
-  const needsComma = !line.trimEnd().endsWith(',');
-
-  const insertion = (needsComma ? ',' : '') + eol + indent + NS;
-  return { ok: true, output: source.slice(0, contentEnd) + insertion + source.slice(contentEnd) };
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const body = source.slice(openIdx + 1, closeIdx).replace(/\s+$/, '');
+  const separator = body.length === 0 || body.endsWith(',') ? '' : ',';
+  const insertion = separator + eol + indent + NS + eol;
+  return { ok: true, output: source.slice(0, openIdx + 1) + body + insertion + source.slice(closeIdx) };
 }
 
 /** 用 node --check 校验补丁后代码的语法（临时文件与目标同目录，解析模式一致）。 */
