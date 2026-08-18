@@ -1,4 +1,4 @@
-# dsh-web-search-pool v0.3.0
+# dsh-web-search-pool v0.1.0-rc.7
 
 Release Date: 2026-08-18
 Compatible with: DeepSeek Harness 0.1.0-rc.7+
@@ -41,7 +41,7 @@ Compatible with: DeepSeek Harness 0.1.0-rc.7+
 ## Installation
 
 npm pack
-dsh plugin --profile web add ./dsh-web-search-pool-0.3.0.tgz
+dsh plugin --profile web add ./dsh-web-search-pool-0.1.0-rc.7.tgz
 
 ## Notes
 

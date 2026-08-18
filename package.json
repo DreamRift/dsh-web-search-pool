@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-pool",
-  "version": "0.3.0",
+  "version": "0.1.0-rc.7",
   "private": false,
   "description": "Multi-key, multi-provider web search pool for DeepSeek Harness",
   "type": "module",
