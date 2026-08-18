@@ -427,11 +427,11 @@ DSH 本地（已读源码）：
 
 ---
 
-## 9. v0.3.0 升级记录（rc.7 Native Bundle 重构）
+## 9. v0.1.0-rc.7 升级记录（rc.7 Native Bundle 重构）
 
 > 规范文档：`docs/superpowers/specs/2026-08-18-native-bundle-rc7-design.md`
 > 实施日期：2026-08-18
-> 目标版本：`dsh-web-search-pool` `0.3.0`，宿主 `@deepseek-ai/dsh@0.1.0-rc.7`
+> 目标版本：`dsh-web-search-pool` `0.1.0-rc.7`，宿主 `@deepseek-ai/dsh@0.1.0-rc.7`
 
 ### 9.1 升级内容
 

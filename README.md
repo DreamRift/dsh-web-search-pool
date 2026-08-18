@@ -21,7 +21,7 @@ DeepSeek Harness 的 **多供应商搜索负载均衡插件**。将多个 Tavily
 npm pack
 
 # Install to your profile
-dsh plugin --profile web add ./dsh-web-search-pool-0.3.0.tgz
+dsh plugin --profile web add ./dsh-web-search-pool-0.1.0-rc.7.tgz
 ```
 
 ### Prerequisites
@@ -88,7 +88,7 @@ See [Upgrade Guide](docs/升级与回滚指南.md#故障排查) for complete tab
 See technical design docs:
 - [Bundle Contract Specification](docs/superpowers/specs/2026-08-18-native-bundle-rc7-design.md)
 - [Key Pool & Scheduler Logic](src/core/)
-- [RC7 Migration Report](v0.3.0-升级实施计划.md)
+- [RC7 Migration Report](v0.1.0-rc.7-升级实施计划.md)
 
 ## 🔐 Security
 

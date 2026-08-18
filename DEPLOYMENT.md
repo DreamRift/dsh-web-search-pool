@@ -6,7 +6,7 @@
 2. .gitignore - 已包含 node_modules, credentials, .tgz 等敏感文件
 3. package.json - 更新为公开发布格式
 4. CHANGELOG.md - 语义化版本变更日志
-5. RELEASE.md - v0.3.0 发布说明（含 breaking changes）
+5. RELEASE.md - v0.1.0-rc.7 发布说明（含 breaking changes）
 6. cordis.patch.yml - RC7 Bundle patch（核心功能）
 7. 测试套件 - 104/104 测试通过
 8. npm pack --dry-run - 打包验证通过
@@ -27,10 +27,10 @@ git push -u origin main
 ### 3. 创建 GitHub Release
 1. 打开 Releases 页面
 2. 创建新 release
-3. Tag: v0.3.0
-4. 标题: v0.3.0 - RC7 Native Bundle Release
+3. Tag: v0.1.0-rc.7
+4. 标题: v0.1.0-rc.7 - RC7 Native Bundle Release
 5. 说明: 使用 RELEASE.md 内容
-6. 附件: 上传 dsh-web-search-pool-0.3.0.tgz
+6. 附件: 上传 dsh-web-search-pool-0.1.0-rc.7.tgz
 
 ### 4. 可选: 发布到 npm
 

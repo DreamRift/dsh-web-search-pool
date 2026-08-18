@@ -2,7 +2,7 @@
 
 > 文档状态：设计草案，供实现前评审
 >
-> 目标版本：`dsh-web-search-pool` `0.3.0`
+> 目标版本：`dsh-web-search-pool` `0.1.0-rc.7`
 >
 > 目标宿主：DeepSeek Harness 官方 `0.1.0-rc.7`
 >
@@ -25,7 +25,7 @@
 - 如何用 TDD、静态检查、打包检查和真实 profile 验证实现。
 - 安装失败、升级失败或需要回滚时如何恢复。
 
-实现必须以本文的“必须满足”条款为准；本文明确标记为“未来扩展”的内容不属于 0.3.0 验收范围。
+实现必须以本文的“必须满足”条款为准；本文明确标记为“未来扩展”的内容不属于 0.1.0-rc.7 验收范围。
 
 ## 2. 设计结论
 
@@ -65,7 +65,7 @@ Bundle layer
   └── 覆盖 web row + insert search-pool Host row
 ```
 
-### 2.2 0.3.0 必须完成的变化
+### 2.2 0.1.0-rc.7 必须完成的变化
 
 1. `package.json` 声明 `dsh.bundle.patch`。
 2. `package.json` 声明 rc.7 Web Client half 所需的 `dsh.client` 和 `exports['./client']`。
@@ -87,9 +87,9 @@ Bundle layer
 11. 保持已有的多 key、多供应商、429 换 key、失败熔断、额度刷新、匿名 Exa 和请求超时行为。
 12. 更新安装指南、升级指南、故障排查和事故规范。
 
-### 2.3 0.3.0 明确不做的内容
+### 2.3 0.1.0-rc.7 明确不做的内容
 
-以下内容不阻塞 0.3.0：
+以下内容不阻塞 0.1.0-rc.7：
 
 - Redis 或跨进程限流。
 - 独立 HTTP 中转服务。
@@ -242,11 +242,11 @@ AI搜索Key池负载均衡/
 
 ### 5.1 是否删除旧脚本
 
-`patch-api-proxy-namespace.mjs` 有两种处理方式，0.3.0 采用“兼容诊断保留”策略：
+`patch-api-proxy-namespace.mjs` 有两种处理方式，0.1.0-rc.7 采用“兼容诊断保留”策略：
 
 - 正常安装流程不调用它。
 - 在 rc.7 上执行时，如果检测不到 `WEB_SETTINGS_NAMESPACES`，输出“当前宿主已自动暴露已注册 namespace，无需 patch”，并以成功退出。
-- 在旧 rc.6 上检测到目标数组时，允许继续做兼容 patch，但文档将其标记为 legacy，不作为 0.3.0 正常支持路径。
+- 在旧 rc.6 上检测到目标数组时，允许继续做兼容 patch，但文档将其标记为 legacy，不作为 0.1.0-rc.7 正常支持路径。
 - 增加版本/目标检测测试，禁止脚本在未知结构上盲写。
 
 如果后续项目只支持 rc.7 及更高版本，可在 0.4.0 删除脚本和相关测试。
@@ -260,7 +260,7 @@ AI搜索Key池负载均衡/
 ```json
 {
   "name": "dsh-web-search-pool",
-  "version": "0.3.0",
+  "version": "0.1.0-rc.7",
   "description": "Multi-key, multi-provider web search pool for DeepSeek Harness",
   "private": false,
   "type": "module",
@@ -403,13 +403,13 @@ AI搜索Key池负载均衡/cordis.patch.yml
 
 ### 7.3 是否默认接管搜索
 
-0.3.0 推荐默认 `enabled: true`，原因：
+0.1.0-rc.7 推荐默认 `enabled: true`，原因：
 
 - 用户安装该 Bundle 的直接意图就是启用搜索池。
 - 没有配置 key 时 provider `available()` 返回 false，显式配置的 `searchProvider: search-pool` 会返回 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`，错误是清晰的。
 - 设置页可关闭插件，关闭时动态切回 `deepseek-official`。
 
-如果产品希望“安装但不接管”，可将 Bundle patch 默认改为 `enabled: false`，但这会使用户安装后第一次搜索仍走官方 provider，容易误以为插件没安装。0.3.0 采用默认开启。
+如果产品希望“安装但不接管”，可将 Bundle patch 默认改为 `enabled: false`，但这会使用户安装后第一次搜索仍走官方 provider，容易误以为插件没安装。0.1.0-rc.7 采用默认开启。
 
 ### 7.4 为什么 patch 必须同时覆盖 web row
 
@@ -762,7 +762,7 @@ refill = rpm / 60 秒
 - 令牌不足时不能选中该 key。
 - `least-used` 读取剩余令牌数。
 - 时间源可注入，便于单测。
-- 0.3.0 使用内存存储，重启后状态清零。
+- 0.1.0-rc.7 使用内存存储，重启后状态清零。
 - 存储接口保留 `{ get, set }`，未来可替换 Redis/SQLite，但本次不实现。
 
 ### 10.4 Scheduler
@@ -819,7 +819,7 @@ least-used：
 5. 429 响应体必须消费或取消，避免连接复用积压。
 6. 不对外暴露 API key 或完整响应体。
 
-0.3.0 不引入固定 sleep；429 只记录 key 冷却，调度器立即尝试本请求的其他候选。这样不会因为一个 key 的 Retry-After 把整个请求阻塞。
+0.1.0-rc.7 不引入固定 sleep；429 只记录 key 冷却，调度器立即尝试本请求的其他候选。这样不会因为一个 key 的 Retry-After 把整个请求阻塞。
 
 ### 10.7 请求取消和内部超时
 
@@ -1242,19 +1242,19 @@ npm pack
 得到：
 
 ```text
-dsh-web-search-pool-0.3.0.tgz
+dsh-web-search-pool-0.1.0-rc.7.tgz
 ```
 
 在 DSH profile 中安装：
 
 ```bash
-dsh plugin --profile web add <项目目录>/dsh-web-search-pool-0.3.0.tgz
+dsh plugin --profile web add <项目目录>/dsh-web-search-pool-0.1.0-rc.7.tgz
 ```
 
 Windows PowerShell 示例：
 
 ```powershell
-dsh plugin --profile web add "<项目目录>/dsh-web-search-pool-0.3.0.tgz"
+dsh plugin --profile web add "<项目目录>/dsh-web-search-pool-0.1.0-rc.7.tgz"
 ```
 
 安装后由 rc.7 `dsh plugin` 完成：
@@ -1333,10 +1333,10 @@ node scripts/patch-api-proxy-namespace.mjs
 2. 备份 `$DSH_HOME/profiles/web/package.json`、`cordis.patch.yml` 和 `settings.yaml`。
 3. 删除旧 profile patch 中手工插入的 `web-search-pool` row，避免重复 entry。
 4. 删除旧的 `WEB_SETTINGS_NAMESPACES` patch 逻辑或不再执行脚本。
-5. 安装 0.3.0 tarball：
+5. 安装 0.1.0-rc.7 tarball：
 
    ```bash
-   dsh plugin --profile web add <path>/dsh-web-search-pool-0.3.0.tgz
+   dsh plugin --profile web add <path>/dsh-web-search-pool-0.1.0-rc.7.tgz
    ```
 
 6. 检查 `dsh.profile.bundles` 是否出现 `dsh-web-search-pool`。
@@ -1356,7 +1356,7 @@ Bundle patch 和用户手工 patch 同时存在时，可能导致：
 
 实现和文档必须要求：
 
-- 0.3.0 Bundle 是唯一 provider row 来源。
+- 0.1.0-rc.7 Bundle 是唯一 provider row 来源。
 - profile `cordis.patch.yml` 只保存用户配置覆盖，不再 insert 同名 provider。
 - 如果用户保留旧手工 row，启动应 fail loud，文档提供删除旧 row 的步骤。
 
@@ -1549,7 +1549,7 @@ npm run test:local
 
 ## 22. 性能目标
 
-0.3.0 不承诺固定供应商延迟，但必须满足以下工程目标：
+0.1.0-rc.7 不承诺固定供应商延迟，但必须满足以下工程目标：
 
 - pool 静态配置未变化时不重复重建。
 - key 查找使用 O(1) Map 索引。
@@ -1589,7 +1589,7 @@ npm run test:local
 session.append('web/search-pool-attempt', record)
 ```
 
-除非该事件被当前 DSH 版本正式注册且 API 明确支持兼容标记。0.3.0 统一使用 `ctx.logger`。
+除非该事件被当前 DSH 版本正式注册且 API 明确支持兼容标记。0.1.0-rc.7 统一使用 `ctx.logger`。
 
 ## 24. 失败场景与恢复表
 
@@ -1737,7 +1737,7 @@ tests/*
 
 实现完成后，项目必须包含：
 
-1. `dsh-web-search-pool@0.3.0` 源码。
+1. `dsh-web-search-pool@0.1.0-rc.7` 源码。
 2. `cordis.patch.yml` Bundle patch。
 3. rc.7 原生安装指南。
 4. 升级/回滚指南。
@@ -1801,4 +1801,4 @@ tests/*
 | 429 | Retry-After 驱动冷却 | 上游网关普遍存在忽略 Retry-After 的问题 |
 | 可观测性 | `ctx.logger` | 不破坏会话历史格式 |
 | 发布方式 | npm package/tarball | 官方 profile plugin 机制可识别并组合 |
-| 版本目标 | `0.3.0` | 从普通 rc.6 时代安装方式迁移到 rc.7 Bundle 属于兼容性升级 |
+| 版本目标 | `0.1.0-rc.7` | 从普通 rc.6 时代安装方式迁移到 rc.7 Bundle 属于兼容性升级 |
