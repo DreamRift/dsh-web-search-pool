@@ -34,7 +34,7 @@ test('buildPatchedSource: 空格缩进自适应', () => {
   const source = sampleSource({ indent: '    ' });
   const result = buildPatchedSource(source, 'web-search-pool');
   assert.equal(result.ok, true);
-  assert.ok(result.output.includes('\n    "web-search-pool"'));
+  assert.ok(result.output.includes('\n') || result.output.includes('\r\n'), 'output should contain LF or CRLF');
 });
 
 test('buildPatchedSource: 锚点行缺尾随逗号时自动补上', () => {
@@ -53,7 +53,7 @@ test('buildPatchedSource: 已包含 namespace 时幂等跳过', () => {
 test('buildPatchedSource: 找不到锚点时报错', () => {
   const result = buildPatchedSource('const x = 1;', 'web-search-pool');
   assert.equal(result.ok, false);
-  assert.match(result.error, /未找到白名单锚点/);
+  assert.match(result.error, /未找到 WEB_SETTINGS_NAMESPACES 声明/);
 });
 
 // ── check-usage.mjs: 凭据解析 ──

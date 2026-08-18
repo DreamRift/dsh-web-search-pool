@@ -1,0 +1,29 @@
+# dsh-web-search-pool Bundle patch for DeepSeek Harness rc.7.
+# The web row is host-owned. Its complete config is restated because an id-targeted
+# patch replaces the whole config rather than deep-merging it.
+
+# Override the official 'web' row to use search-pool provider
+- id: web
+  config:
+    searchProvider: search-pool
+
+# Insert the search pool provider definition
+- insert:
+    - id: web-search-pool
+      name: dsh-web-search-pool
+      config:
+        enabled: true
+        providers:
+          tavily:
+            keys: []
+          exa:
+            keys: []
+        strategy: weighted-round-robin
+        providerPriority: [tavily, exa]
+        allowedFails: 3
+        cooldownMs: 30000
+        retryAfterFallbackMs: 1000
+        usageCacheMs: 300000
+        quotaReserveCredits: 2
+        quotaExhaustedCooldownMs: 2592000000
+        requestTimeoutMs: 20000

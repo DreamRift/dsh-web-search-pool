@@ -424,3 +424,41 @@ DSH 本地（已读源码）：
    Client 显示请求/失败提示），重启 DSH 后最终验证设置页「Tavily 额度总览」与「立即刷新」更新时间。
 2. 阶段 3（运行时状态）：每个 key 的冷却 / 限流 / 失败徽章，需要 provider 在 Host 侧暴露实时状态。
 3. 若 DSH 升级覆盖 npm 安装目录：运行 `scripts/patch-api-proxy-namespace.mjs` 恢复 settings 白名单。
+
+---
+
+## 9. v0.3.0 升级记录（rc.7 Native Bundle 重构）
+
+> 规范文档：`docs/superpowers/specs/2026-08-18-native-bundle-rc7-design.md`
+> 实施日期：2026-08-18
+> 目标版本：`dsh-web-search-pool` `0.3.0`，宿主 `@deepseek-ai/dsh@0.1.0-rc.7`
+
+### 9.1 升级内容
+
+| 项 | 变更 | 状态 |
+|---|---|---|
+| package.json | 新增 `dsh.bundle.patch` 指向 `cordis.patch.yml` | ✅ 完成 |
+| package.json | peerDependencies 从 `*` 收紧到 `^0.1.0-rc.7` | ✅ 完成 |
+| cordis.patch.yml | 新增 Bundle patch：覆盖 web row + 插入 web-search-pool | ✅ 完成 |
+| src/dsh/client.js | `settings.plugin.item` 从 `id: 'search-pool'` 改为 `key: 'web-search-pool'` | ✅ 完成 |
+| scripts/patch-api-proxy-namespace.mjs | 改为 rc.7 诊断模式（不再作为主安装步骤） | ✅ 完成 |
+| tests/bundle-contract.test.js | 新增：验证 Bundle patch 结构和 provider id 一致性 | ✅ 完成 |
+| tests/client-contract.test.js | 新增：验证 rc.7 client factory 和 keyed slot | ✅ 完成 |
+| tests/install-contract.test.js | 新增：验证 peer 依赖和 pack 内容 | ✅ 完成 |
+| docs/挂载指南.md | 重写为 rc.7 原生安装方式 | ✅ 完成 |
+| docs/升级与回滚指南.md | 新增升级/回滚/故障排查文档 | ✅ 完成 |
+
+### 9.2 关键设计决策
+
+1. **原生 Bundle**：一个 npm 包同时提供 Host composition、Web Client half 和 `cordis.patch.yml` Bundle patch。
+2. **覆盖 web row**：rc.7 中 `WebRuntime` 配置优先于环境变量，必须通过 id-targeted patch 覆盖 `searchProvider`。
+3. **keyed slot**：rc.7 将 `settings.plugin.item` 改为 keyed slot，注册必须使用 `key` 且与 Settings namespace 严格一致。
+4. **凭据走 credentials**：API key 只通过 credentials 服务保存，不进入 settings.yaml 非 secret 层。
+5. **默认开启**：安装 Bundle 即接管搜索（`searchProvider: search-pool`），无 key 时 provider unavailable 错误清晰。
+
+### 9.3 验收结果
+
+- [x] `npm run test:local` 全部通过（104/104）
+- [x] 语法检查通过（node --check）
+- [ ] 真实 profile 安装验证（如环境允许）
+- [ ] 真实供应商搜索验证（需提供测试 key）
