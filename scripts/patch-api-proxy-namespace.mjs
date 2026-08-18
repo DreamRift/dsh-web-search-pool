@@ -105,6 +105,29 @@ function syntaxCheckOk(file, code) {
 }
 
 async function main() {
+  // RC.7+ 兼容检测：检查是否存在 WEB_SETTINGS_NAMESPACES（rc.6 特征）
+  const targetFile = findApiProxyIndex();
+  if (targetFile === null) {
+    console.error('[RC.7+] dsh-host-apiproxy not found or already auto-exposes namespaces.');
+    console.error('In DeepSeek Harness rc.7+, settings namespaces are automatically exposed.');
+    console.error('No patch is required. If you are upgrading from rc.6, please ignore this script.');
+    console.error('Legacy support kept for diagnostic purposes only.');
+    return; // Don't fail - just no-op in rc.7+
+  }
+  
+  try {
+    const source = readFileSync(targetFile, 'utf8');
+    if (!source.includes('WEB_SETTINGS_NAMESPACES')) {
+      console.log('[RC.7+] Target file does not contain WEB_SETTINGS_NAMESPACES.');
+      console.log('This indicates rc.7+ which auto-exposes settings namespaces.');
+      console.log('No patch needed. Exiting successfully.');
+      return;
+    }
+  } catch (e) {
+    console.error('[RC.7+] Could not read target:', e.message);
+    console.error('If DSH rc.7+ installed, no action required.');
+    return;
+  }
   const file = findApiProxyIndex();
   if (file === null) {
     console.error([

@@ -598,13 +598,14 @@ window.__ModuleLoader__.load({
       SearchPoolCard.scope = scope;
       SearchPoolCard.api = connection && connection.api ? connection.api : null;
       ctx.slots.inject("settings.plugin.item", function () {
-        return ctx.slots.register(
-          { name: "settings.plugin.item", id: "search-pool", order: 21 },
-          SearchPoolCard
-        );
+        return ctx.slots.register({
+          name: "settings.plugin.item",
+          key: "web-search-pool",
+          order: 21
+        }, SearchPoolCard);
       });
     }
-
+    
     exports.apply = apply;
     exports.inject = ["settingsScope", "slots", "connection"];
     return module.exports;

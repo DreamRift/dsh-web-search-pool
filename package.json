@@ -1,8 +1,8 @@
 {
   "name": "dsh-web-search-pool",
-  "version": "0.2.0",
-  "private": true,
-  "description": "多 key 多供应商（Tavily + Exa）搜索 provider，为 DeepSeek Harness 的 web capability seam（ctx.web）提供按限流负载均衡",
+  "version": "0.3.0",
+  "private": false,
+  "description": "Multi-key, multi-provider web search pool for DeepSeek Harness",
   "type": "module",
   "main": "src/dsh/index.js",
   "engines": {
@@ -10,15 +10,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/DreamRift/dsh-web-search-pool.git"
+    "url": "https://github.com/dreamrift/dsh-web-search-pool.git"
   },
-  "homepage": "https://github.com/DreamRift/dsh-web-search-pool",
+  "homepage": "https://github.com/dreamrift/dsh-web-search-pool",
   "files": [
     "src/",
     "scripts/",
     "docs/挂载指南.md",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "cordis.patch.yml",
+    "docs/升级与回滚指南.md"
   ],
   "exports": {
     ".": "./src/dsh/index.js",
@@ -33,20 +35,37 @@
   },
   "license": "MIT",
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
+      "platform": "web",
       "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-settings"
-      ],
-      "platform": "web"
+      ]
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-credentials": "*",
-    "@deepseek-ai/dsh-launch-environment": "*",
-    "@deepseek-ai/dsh-settings": "*",
-    "@deepseek-ai/dsh-web": "*",
-    "@deepseek-ai/schemastery": "*"
-  }
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-launch-environment": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-web": "^0.1.0-rc.7",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "web-search",
+    "load-balancing",
+    "tavily",
+    "exa"
+  ]
 }
