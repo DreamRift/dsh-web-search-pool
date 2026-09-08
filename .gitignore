@@ -1,9 +1,11 @@
-# Build output
-dsh-web-search-pool-*.tgz
+# Build output / 本地构建产物（发版包不入库）
+*.tgz
+*.bak
 
 # Node.js
 node_modules/
 npm-debug.log*
+*.log
 
 # DSH profile
 profiles/
