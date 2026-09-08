@@ -22,12 +22,23 @@ test('install contract: peerDependencies cannot use wildcard', () => {
       assert.fail('peerDependency ' + dep + ' cannot use wildcard *, must specify exact version');
     }
     
-    // Verify rc.7 targeting for DSH dependencies
+    // Verify dual-line targeting: the rc.7 line plus the 0.1.2 line that removed
+    // installSettingsSection/settingsNamespace and ctx.connection.api.
     if (dep.startsWith('@deepseek-ai/dsh-')) {
-      assert.ok(version.includes('rc.7'),
-        'DSH dependency ' + dep + ' must target rc.7: ' + version);
+      assert.ok(version.includes('^0.1.2-rc.1'),
+        'DSH dependency ' + dep + ' must accept the 0.1.2 line: ' + version);
     }
   }
+});
+
+test('install contract: removed packages must not be referenced', () => {
+  // dsh-client-runtime and dsh-host-apiproxy stopped publishing after 0.1.1-rc.2;
+  // naming them in peers or dsh.client.inject would break resolution on 0.1.2+.
+  const raw = readFileSync(pkgJsonPath, 'utf-8');
+  assert.ok(!raw.includes('dsh-client-runtime'),
+    'package.json must not reference @deepseek-ai/dsh-client-runtime (removed in 0.1.2)');
+  assert.ok(!raw.includes('dsh-host-apiproxy'),
+    'package.json must not reference @deepseek-ai/dsh-host-apiproxy (removed in 0.1.2)');
 });
 
 test('install contract: files array must include cordis.patch.yml and client.js', () => {
