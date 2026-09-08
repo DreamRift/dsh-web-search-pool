@@ -1,117 +1,79 @@
 # dsh-web-search-pool
 
-![Version](https://img.shields.io/npm/v/dsh-web-search-pool.svg) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![DSH Version: rc.7](https://img.shields.io/badge/DSH%20version-%E2%96%B2%20rc.7-orange)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![DSH: 0.1.1-rc.x / 0.1.2+](https://img.shields.io/badge/DSH-0.1.1--rc.x%20%7C%200.1.2%2B-orange)
 
-DeepSeek Harness 的 **多供应商搜索负载均衡插件**。将多个 Tavily 和 Exa API keys 组织成智能池，自动按限流调度并故障切换。
+多供应商搜索负载均衡插件，为 **DeepSeek Harness** 提供 `web_search` 能力：把多个 Tavily / Exa key 组成一个智能池，按各自限流调度，失败自动切换。
 
 ## ✨ Features
 
-- 🔑 **Multi-key Pool**: 支持多个 Tavily + Exa keys，统一管理
-- ⚖️ **Smart Load Balancing**: 基于 RPM（每分钟的请求数）加权轮询调度
-- 🔄 **Automatic Fallback**: 429 rate limit、额度耗尽、网络错误时自动切换到下一个 key
-- 📊 **Usage Dashboard**: Settings 页卡片实时查看已用额度、总限额、刷新按钮
-- 🔒 **Secure**: API keys 通过 DSH credentials service 保存，不写入配置文件
-- 🎯 **Exa Anonymous Free Tier**: 内置免费匿名层（1 req/sec），有 key 走 REST 提配额
-- 🏗️ **Native Bundle (rc.7)**: DeepSeek Harness 官方式原生 Bundle 集成
+- 🔑 **Multi-key pool** — 统一管理任意数量的 Tavily / Exa key，key 只以凭据引用形式存在
+- ⚖️ **Rate-limit aware scheduling** — smooth weighted round-robin（按 rpm 加权）或 least-used
+- 🔄 **Automatic failover** — 429 / 额度耗尽 / 网络错误 / 超时自动换 key，供应商间（Tavily ↔ Exa）自动兜底
+- 📊 **Usage dashboard** — 设置页卡片显示 Tavily 已用/总额度与「立即刷新」，额度耗尽自动长冷却
+- 🆓 **Exa anonymous free tier** — 不填 key 即用官方托管 MCP（1 req/s），有 key 走 REST 提配额
+- 🧩 **Native Bundle** — 官方 `cordis.patch.yml` 装配 + 设置页卡片，兼容 DSH 0.1.1-rc.x 与 0.1.2+
 
 ## 📦 Installation
 
 ```bash
-# Build distribution package
 npm pack
-
-# Install to your profile
-dsh plugin --profile web add ./dsh-web-search-pool-0.1.0-rc.7.tgz
+dsh plugin --profile web add ./dsh-web-search-pool-<version>.tgz
+dsh --profile web --dump-config      # 期望：searchProvider: search-pool
 ```
 
-### Prerequisites
-
-- ✅ **DeepSeek Harness** 0.1.0-rc.7 or higher
-- 🔐 At least one search provider API key (Tavily / Exa)
+前置：DSH 0.1.1-rc.x / 0.1.2+，`pnpm` 在 PATH，至少一个搜索 key（Exa 可用匿名免费层）。
+完整步骤、升级、回滚与排障见 [安装与升级](docs/安装与升级.md)。
 
 ## ⚙️ Configuration
 
-After installation, configure via DSH Settings UI:
+**Settings → Plugins → 「搜索 Key 池」** 卡片：添加 key（环境变量名 / 限流 RPM / 备注）→ 保存。
 
-1. Open **DeepSeek Harness** → **Settings** → **Plugins**
-2. Find **"搜索 Key 池"** card and expand it
-3. Add your Tavily/Exa keys with:
-   - **Environment Variable Name** (e.g., `TAVILY_API_KEY_1`)
-   - **Rate Limit (RPM)**: requests per minute
-   - **Remark**: friendly name (optional)
-4. Click **Save** - secrets are stored securely via credentials
-
-> 🔐 All API keys are stored in DS H's credential system, never in plain-text configs.
+密钥只经 DSH credentials 服务保存，**不写入 settings.yaml**；Exa 的环境变量名留空即启用匿名免费层。
+字段与默认值全表见 [架构与机制 §6](docs/架构与机制.md)。
 
 ## 🛠️ Usage
 
-Once configured, the plugin automatically becomes your default `web_search` tool. No manual selection needed!
-
-The provider will:
-- Select optimal key based on current quota and load
-- Switch providers (Tavily ↔ Exa) on failure
-- Respect rate limits and quotas across all keys
-- Return structured errors without exposing sensitive data
+安装后自动接管 `web_search`，无需手动选择 provider：按当前限流与额度选 key → 失败自动换 key / 换供应商 → 返回结构化结果与错误（不暴露密钥）。
 
 ## 🧪 Testing
 
 ```bash
-# Run test suite
-npm run test
-
-# Syntax check
-node --check src/**/*.js scripts/*.mjs
-
-# Pack integrity check
-npm pack --dry-run
+node scripts/run-tests.mjs        # 112 个 node:test 用例（免 spawn，跨平台）
+npm test                          # 等价入口：node --test tests/
+node --check src/dsh/index.js     # 语法检查
+npm pack --dry-run                # 打包内容校验
 ```
 
 ## 📄 Documentation
 
-- [Installation Guide](docs/挂载指南.md) - Quick setup for rc.7
-- [Upgrade & Rollback Guide](docs/升级与回滚指南.md) - Migrate from v0.2.x, troubleshooting
-- [Development History & Specs](docs/superpowers/) - Design decisions and specifications
-- [Architecture Overview](AI搜索Key池负载均衡 - 开发计划.md) - Technical architecture and trade-offs
+| 文档 | 内容 |
+|---|---|
+| [安装与升级](docs/安装与升级.md) | 安装 / 验证 / 配置 / 升级 / 回滚 / 故障排查 |
+| [架构与机制](docs/架构与机制.md) | DSH seam 与 Bundle 装配、调度核心、配置模型、错误映射、扩展路径 |
+| [开发规范与事故复盘](docs/开发规范与事故复盘.md) | 五类真实事故的根因与教训、开发检查清单、发布流程 |
+| [CHANGELOG](CHANGELOG.md) | 版本变更历史 |
 
 ## 🔧 Troubleshooting
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| No settings card | Legacy rc.6 slot registration | Update to use `key: web-search-pool`, restart DSH |
-| Still using official search | Bundle patch not loaded | Reinstall tarball, verify `searchProvider: search-pool` |
-| Usage refresh fails | Invalid credentials or quota exhausted | Check credentials config, wait for quota recovery |
+| 现象 | 处理 |
+|---|---|
+| 设置页没有卡片 / `keyed slot requires options.key` | 升级到 0.2.0+ 并重启 DSH |
+| Web UI 报 `Failed to load plugins / dsh-web-search-pool` | 升级到 0.2.1+（client 需声明 `remote` 命名空间 inject） |
+| 仍走官方搜索 | `dump-config` 检查 `include:web` 的 `searchProvider` |
+| 点击「立即刷新」无变化 | 重启 DSH，查看 `usageDiagnostic` |
 
-See [Upgrade Guide](docs/升级与回滚指南.md#故障排查) for complete table.
-
-## 🏗️ Architecture
-
-See technical design docs:
-- [Bundle Contract Specification](docs/superpowers/specs/2026-08-18-native-bundle-rc7-design.md)
-- [Key Pool & Scheduler Logic](src/core/)
-- [RC7 Migration Report](v0.1.0-rc.7-升级实施计划.md)
+完整排查表见 [安装与升级 §9](docs/安装与升级.md)。
 
 ## 🔐 Security
 
-This plugin follows **Zero Trust** for credentials:
-- No hardcoded secrets or API keys
-- Keys only stored via DSH credentials service
-- Never logged or exposed in responses
-- Public anonymous mode available (Exa free tier)
+- 无硬编码密钥；key 只经 DSH credentials 服务读写，每次操作 resolve，不缓存明文
+- 日志只记 `provider/keyId/ok/code`，不含密钥；错误信息不泄露凭据
+- 不写未注册的会话事件（避免污染会话历史）
 
 ## 📜 License
 
-MIT License - see LICENSE file
-
-## 🤝 Contributing
-
-Issues and PRs welcome! Please follow existing patterns:
-- Core logic in `src/core/` (DSH-independent)
-- Provider implementation in `src/dsh/` (Host half)
-- Client UI in `src/dsh/client.js` (Web half)
-- Tests parallel production coverage (TDD)
-
-See [Development Guidelines](docs/开发事故复盘与规范.md) for best practices.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-Built for **DeepSeek Harness** community · Part of native ecosystem
+Built for the DeepSeek Harness community · part of the native plugin ecosystem

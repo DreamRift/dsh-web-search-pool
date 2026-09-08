@@ -5,6 +5,11 @@
  * 读 `web-search-pool` settings namespace 展示并编辑 key 池配置（开关/策略/优先级/熔断/key 增删/备注）。
  * 每个 key 的密钥与 harness 其他密钥输入一致：write-only password，不显示明文，只显示「已配置/未配置」；
  * 留空保持当前密钥，输入新值并保存则覆盖。
+ *
+ * 跨版本（0.1.1-rc.x / 0.1.2+）：DSH 0.1.2 删除了 `ctx.connection.api`（IApiClient，
+ * 随 dsh-host-apiproxy 一并移除），领域调用改为 Typert Remote（`ctx.remote.credentials`），
+ * settings 写入走 `settingsScope.bind(...).mutate(ops)`。
+ * 这里按运行时能力探测，两代共用同一张卡片代码。
  */
 
 window.__ModuleLoader__.load({
@@ -30,6 +35,51 @@ window.__ModuleLoader__.load({
     var REFRESH_BUTTON_REARM_MS = 5000;
     /** 额度耗尽长冷却的默认值（30 天，毫秒），与 Host 侧 DEFAULTS 对齐。 */
     var THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+    /** RemoteResult（0.1.2+ Typert Remote 信封）→ 可读错误文本。 */
+    function remoteFailureMessage(result) {
+      var error = result && result.error;
+      if (error == null) return "远程调用失败";
+      return String(error.message || error.code || JSON.stringify(error));
+    }
+
+    /**
+     * 0.1.2+ 的领域 API 适配层：把 Typert Remote 结果包装成旧 IApiClient 的信封
+     * （{ result: { ok, value } }），卡片其余代码因此无需分叉。
+     *
+     * 注意：remote 命名空间是 cordis 服务 `remote.<namespace>`，**必须在 inject 里声明**
+     * 才能访问（否则 cordis 抛 `cannot get property "remote.credentials" without inject`），
+     * 所以本函数接收的是已经注入过 `remote` + `remote.credentials` 的 scoped ctx。
+     * @param {object} rctx 已注入 remote 命名空间的上下文。
+     */
+    function makeRemoteApi(rctx) {
+      var remote = rctx.remote;
+      if (remote == null || remote.credentials == null) return null;
+      var credentials = remote.credentials;
+      return {
+        credentials: {
+          describe: function (request) {
+            return Promise.resolve(credentials.describe(request.refs)).then(function (result) {
+              if (!result || result.ok !== true) return { result: { ok: false, message: remoteFailureMessage(result) } };
+              return { result: { ok: true, value: { credentials: result.value || {} } } };
+            });
+          },
+          set: function (request) {
+            return Promise.resolve(credentials.set(request.ref, request.value)).then(function (result) {
+              if (!result || result.ok !== true) throw new Error(remoteFailureMessage(result));
+              return { result: { ok: true } };
+            });
+          }
+        }
+      };
+    }
+
+    /** 旧版路径：0.1.1-rc.x 的 ctx.connection.api（0.1.2 随 dsh-host-apiproxy 一并移除）。 */
+    function legacyApi(ctx) {
+      if (ctx == null) return null;
+      var connection = ctx.get("connection");
+      return connection != null && connection.api != null ? connection.api : null;
+    }
 
     var CHEVRON_D = "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z";
 
@@ -82,9 +132,23 @@ window.__ModuleLoader__.load({
       return refs;
     }
 
+    /**
+     * 惰性解析并缓存领域 API：0.1.2+ 的 remote 适配层由 scoped inject 回调写入
+     * （remoteCtx），0.1.1-rc.x 退回 connection.api。服务挂载顺序可能晚于 apply。
+     */
+    function currentApi() {
+      if (SearchPoolCard.api != null) return SearchPoolCard.api;
+      if (SearchPoolCard.remoteCtx != null) {
+        SearchPoolCard.api = makeRemoteApi(SearchPoolCard.remoteCtx);
+        if (SearchPoolCard.api != null) return SearchPoolCard.api;
+      }
+      SearchPoolCard.api = legacyApi(SearchPoolCard.ctx);
+      return SearchPoolCard.api;
+    }
+
     function SearchPoolCard() {
       var scope = SearchPoolCard.scope;
-      var api = SearchPoolCard.api;
+      var api = currentApi();
       var hooks = react.useState(false);
       var open = hooks[0];
       var setOpen = hooks[1];
@@ -229,20 +293,25 @@ window.__ModuleLoader__.load({
               })
             }
           };
-          if (api != null && api.settings != null && typeof api.settings.mutate === "function") {
-            // 单次事务提交全部字段（多个 op 一次 mutate），避免逐字段 set 造成的
-            // 多次 revision 冲突面与多次更新广播。
-            api.settings.mutate({
-              ns: "web-search-pool",
-              ops: Object.keys(values).map(function (key) {
-                return { op: "set", path: [key], value: values[key] };
-              })
-            }).then(afterCommit).catch(function (e) {
+          var ops = Object.keys(values).map(function (key) {
+            return { op: "set", path: [key], value: values[key] };
+          });
+          // 0.1.2+：scope.mutate 是官方事务写入口（单一 revision fence + 失败恢复读）。
+          if (scope != null && typeof scope.mutate === "function") {
+            scope.mutate(ops).then(afterCommit).catch(function (e) {
               setSaveError("保存设置失败：" + String(e && e.message || e));
             });
             return;
           }
-          // 回退路径（无 api.settings）：逐字段 scope.set。
+          if (api != null && api.settings != null && typeof api.settings.mutate === "function") {
+            // 0.1.1-rc.x：单次事务提交全部字段（多个 op 一次 mutate），避免逐字段 set 造成的
+            // 多次 revision 冲突面与多次更新广播。
+            api.settings.mutate({ ns: "web-search-pool", ops: ops }).then(afterCommit).catch(function (e) {
+              setSaveError("保存设置失败：" + String(e && e.message || e));
+            });
+            return;
+          }
+          // 回退路径（无 mutate）：逐字段 scope.set。
           Object.keys(values).forEach(function (key) { scope.set(key, values[key]); });
           afterCommit();
         }
@@ -274,12 +343,16 @@ window.__ModuleLoader__.load({
           setRefreshing(false);
         }, REFRESH_BUTTON_REARM_MS);
         var tick = (config.usageRefreshTick != null ? config.usageRefreshTick : 0) + 1;
-        if (api != null && api.settings != null && typeof api.settings.mutate === "function") {
-          // 不带 expectedRevision，避免 Host 刚写 usage 导致 revision 冲突而点击无反应。
-          api.settings.mutate({
-            ns: "web-search-pool",
-            ops: [{ op: "set", path: ["usageRefreshTick"], value: tick }],
-          }).then(function () {
+        var ops = [{ op: "set", path: ["usageRefreshTick"], value: tick }];
+        // 不带 expectedRevision，避免 Host 刚写 usage 导致 revision 冲突而点击无反应。
+        if (scope != null && typeof scope.mutate === "function") {
+          scope.mutate(ops).then(function () {
+            showRefreshNote("已请求刷新，等待 Host 回写…");
+          }).catch(function (e) {
+            showRefreshNote("刷新请求失败：" + String(e && e.message || e));
+          });
+        } else if (api != null && api.settings != null && typeof api.settings.mutate === "function") {
+          api.settings.mutate({ ns: "web-search-pool", ops: ops }).then(function () {
             showRefreshNote("已请求刷新，等待 Host 回写…");
           }).catch(function (e) {
             showRefreshNote("刷新请求失败：" + String(e && e.message || e));
@@ -594,9 +667,15 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       var scope = ctx.settingsScope.bind({ namespace: "web-search-pool" });
-      var connection = ctx.get("connection");
       SearchPoolCard.scope = scope;
-      SearchPoolCard.api = connection && connection.api ? connection.api : null;
+      SearchPoolCard.ctx = ctx;
+      // 0.1.2+：remote 命名空间（cordis 服务 `remote.<ns>`）必须显式 inject 才能访问。
+      // 用 scoped inject 保持旧版兼容：0.1.1-rc.x 没有这些服务 → 回调不执行 → 走 connection.api。
+      ctx.inject(["remote", "remote.credentials"], function (rctx) {
+        SearchPoolCard.remoteCtx = rctx;
+        SearchPoolCard.api = makeRemoteApi(rctx);
+      });
+      SearchPoolCard.api = currentApi();
       ctx.slots.inject("settings.plugin.item", function () {
         return ctx.slots.register({
           name: "settings.plugin.item",

@@ -30,6 +30,9 @@ test('bundle contract: cordis.patch.yml exists and has correct structure', () =>
   assert.ok(content.length > 0, 'cordis.patch.yml must exist and not be empty');
   assert.ok(content.includes('- id: web'), 'patch must override web row');
   assert.ok(content.includes('searchProvider: search-pool'), 'web row must set searchProvider to search-pool');
+  // id-targeted patches replace the whole config, so the 0.1.2 official web row's
+  // fetchProvider pin must be restated or web_fetch loses its provider.
+  assert.ok(content.includes('fetchProvider: http'), 'web row must restate fetchProvider: http (0.1.2 base config)');
   assert.ok(content.includes('insert:'), 'patch must have insert section');
   assert.ok(content.includes('id: web-search-pool'), 'must insert web-search-pool provider row');
 });
