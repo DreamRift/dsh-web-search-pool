@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "搜索 Key 池",
+    "description": "多 key 多供应商（Tavily + Exa）网页搜索，按限流负载均衡、失败自动切换"
+  }
+}
