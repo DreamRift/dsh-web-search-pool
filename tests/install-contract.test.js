@@ -22,11 +22,10 @@ test('install contract: peerDependencies cannot use wildcard', () => {
       assert.fail('peerDependency ' + dep + ' cannot use wildcard *, must specify exact version');
     }
     
-    // Verify dual-line targeting: the rc.7 line plus the 0.1.2 line that removed
-    // installSettingsSection/settingsNamespace and ctx.connection.api.
+    // 0.3.0 起面向 DSH 0.1.7 线：每个 dsh* peer 都必须覆盖 rc.7 时代之后的运行时。
     if (dep.startsWith('@deepseek-ai/dsh-')) {
-      assert.ok(version.includes('^0.1.2-rc.1'),
-        'DSH dependency ' + dep + ' must accept the 0.1.2 line: ' + version);
+      assert.ok(version.includes('^0.1.7-rc.1'),
+        'DSH dependency ' + dep + ' must accept the 0.1.7 line: ' + version);
     }
   }
 });

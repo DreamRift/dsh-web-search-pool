@@ -111,7 +111,7 @@ test('SearchPoolProvider: refreshUsage 发布总消耗/总可用快照', async (
   usageCalls = 0;
   const published = [];
   const provider = new SearchPoolProvider(options, {
-    publishUsage: (snapshot) => { published.push(snapshot); },
+    logUsage: (snapshot) => { published.push(snapshot); },
   });
   await provider.refreshUsage(provider.resolveOptions());
   assert.equal(published.length, 1);
@@ -134,7 +134,7 @@ test('SearchPoolProvider: refreshUsage 部分失败时发布诊断并更新时�
     ],
     resolveKey: async (entry) => entry.credentialRef === 'TAVILY_API_KEY_2' ? null : 'tvly-test',
   }), {
-    publishUsage: (snapshot, diagnostic) => { published.push({ snapshot, diagnostic }); },
+    logUsage: (snapshot, diagnostic) => { published.push({ snapshot, diagnostic }); },
   });
   const result = await provider.refreshUsage(provider.resolveOptions());
   assert.equal(published.length, 1);
@@ -150,7 +150,7 @@ test('SearchPoolProvider: refreshUsage 无 Tavily key 时发布可见诊断', as
     ...options(),
     entries: [{ id: 'e1', provider: 'exa', credentialRef: 'EXA_API_KEY_1', rpm: 30 }],
   }), {
-    publishUsage: (snapshot, diagnostic) => { published.push({ snapshot, diagnostic }); },
+    logUsage: (snapshot, diagnostic) => { published.push({ snapshot, diagnostic }); },
   });
   const result = await provider.refreshUsage(provider.resolveOptions());
   assert.equal(published.length, 1);
@@ -223,3 +223,4 @@ test('SearchPoolProvider: dispose 后搜索判定不可用', async () => {
     (error) => error.code === 'WEB_PROVIDER_UNAVAILABLE',
   );
 });
+

@@ -2,6 +2,47 @@
 
 All notable changes to this project.
 
+## [0.3.0] - 2026-09-25
+
+### Changed (Breaking)
+- **适配 DSH 0.1.7（官方桌面版 0.1.7-rc.2 实测）**，不再支持 0.1.1-rc.x / 0.1.2：
+  peer 范围收紧为 `^0.1.7-rc.1`（DSH 启动兼容门用 `satisfies(运行时, 区间, {includePrerelease})`
+  判定，不满足的 bundle 层会被整体跳过）。
+- **设置体系重写**：0.1.7 移除了 `settings.installSection` / `installSettingsSection`
+  （0.1.2 已移除前者依赖的 helper），设置表单改为 loader 行 **Config schema 自动投影**
+  （namespace = 行 id `web-search-pool`）。`Config` 全部用户可编辑字段改为 `.volatile()`，
+  运行期是 Ref（`config.enabled.get()`），编辑经 `settings.mutate` 写 profile patch 后
+  就地提交（`loader/volatile-update`，不重挂插件）。
+- **Client half 重写**：`settings.plugin.item` keyed slot → **`plugins.row.config`**
+  keyed slot（key = `dsh-web-search-pool#web-search-pool`）；数据面 `ctx.settingsScope`
+  → **`ctx.configForms`**（`get(ns)` + `whileServed` 门控）；写入走 `form.mutate(ops, revision)`。
+- **运行时状态移出 settings**：`usageRefreshTick` / `usageDiagnostic` / `usage` 三个字段从
+  schema 删除——0.1.7 的 settings 写入即持久化进用户 profile patch，Host 周期发布的运行时会话
+  数据不能落盘。Tavily 额度快照改为 `ctx.logger` 观测（`search-pool usage used=… limit=…`），
+  设置卡片不再展示额度总览与「立即刷新」按钮（Host 仍按 `usageCacheMs` 后台自动刷新，
+  额度闸门/长冷却/自动恢复逻辑不变）。
+- `cordis.patch.yml` 的注释补明 0.1.7 行 id 语义（patch 按短 id `web` 匹配；loader 完整 id
+  是 `include:web`，宿主侧运行时探测两者）。
+
+### Fixed
+- **修复 0.1.7 上「安装后无插件页面 + 重启 dsh 报错」**：0.2.1 的 client half 在
+  `exports.inject` 里等服务 `settingsScope`（0.1.2 的服务，0.1.7 已移除），浏览器 loader
+  entry 永远 pending，web boot 失败（桌面版崩溃日志实证
+  `dsh-web-search-pool: pending (waiting for service: settingsScope)`）。
+
+### Added
+- 插件显示元数据 `locale/en.json` + `locale/zh.json`（插件管理页的标题/描述），
+  `exports` 增加 `./locale/*.json`。
+- 测试：`tests/dsh-host-apply.test.js`（真实 cordis + vendored Loader + schemastery 驱动
+  host half：provider 注册、volatile Ref、就地提交不重挂、web 行同步、搜索链路）；
+  `tests/dsh-client-contract.test.js`（vm 物化浏览器 bundle，守住新 slot/configForms/inject
+  契约）；`tests/dsh-version-compat.test.js` 重写（迷你 semver 兼容门 + patch 目标 + volatile
+  形态）。合计 122 个用例全绿。
+- `scripts/e2e-boot.mjs`：用桌面版 app.asar 里的真实运行时，在隔离 DSH_HOME 的临时 profile
+  端到端启动整棵宿主树，验证 bundle 加载、patch 生效、插件 ACTIVE、settings.describe 投影、
+  settings.update 落盘 + 就地提交、client-modules 图谱下发。
+- `scripts/sync-peer-deps.mjs`：把宿主 app.asar 的 peer 包同步进本地 node_modules（仅供测试）。
+
 ## [0.2.1] - 2026-09-08
 
 ### Fixed

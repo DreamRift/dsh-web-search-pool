@@ -99,11 +99,12 @@ function samePoolOptions(a, b) {
 export class SearchPoolProvider {
   /**
    * @param {() => object} resolveOptions 每次搜索取最新配置快照。
-   * @param {{ publishUsage?: (snapshot: object) => Promise<unknown>|void }} [options]
+   * @param {{ logUsage?: (snapshot: object|null, diagnostic: string) => void }} [options]
+   *   额度快照的观测出口（0.1.7 起 settings 不再承载运行时状态，快照只进日志）。
    */
   constructor(resolveOptions, options = {}) {
     this.resolveOptions = resolveOptions;
-    this.publishUsage = options.publishUsage;
+    this.logUsage = options.logUsage;
     this.id = SEARCH_POOL_PROVIDER_ID;
     this._poolCache = null;
     /** 上一次建池时的 options 引用（配合 samePoolOptions 决定复用）。 */
@@ -158,7 +159,7 @@ export class SearchPoolProvider {
       const emptySnapshot = { updatedAt: Date.now(), totalUsed: 0, totalLimit: 0, keys: [] };
       if (this._poolCache === pool) this._usageCache = { fetchedAt: Date.now(), byRef: new Map() };
       this._recoverQuota(options, pool);
-      this._publishUsage(emptySnapshot, '没有可查询的 Tavily key');
+      this._logUsage(emptySnapshot, '没有可查询的 Tavily key');
       return emptySnapshot;
     }
 
@@ -223,7 +224,7 @@ export class SearchPoolProvider {
       this._recoverQuota(options, pool);
     }
     const diagnostic = errors.length > 0 ? 'Tavily 额度刷新部分失败: ' + errors.join('; ') : '';
-    this._publishUsage(snapshot, diagnostic);
+    this._logUsage(snapshot, diagnostic);
     return snapshot;
   }
 
@@ -250,11 +251,13 @@ export class SearchPoolProvider {
     }
   }
 
-  _publishUsage(snapshot, diagnostic = '') {
-    if (this.publishUsage == null || snapshot == null) return;
-    Promise.resolve(this.publishUsage(snapshot, diagnostic)).catch((error) => {
-      this.resolveOptions()?.recordRequest?.({ provider: PROVIDER_TAVILY, keyId: '*', ok: false, code: 'USAGE_PUBLISH_FAILED', message: String(error?.message ?? error) });
-    });
+  _logUsage(snapshot, diagnostic = '') {
+    if (this.logUsage == null || snapshot == null) return;
+    try {
+      this.logUsage(snapshot, diagnostic);
+    } catch (error) {
+      this.resolveOptions()?.recordRequest?.({ provider: PROVIDER_TAVILY, keyId: '*', ok: false, code: 'USAGE_LOG_FAILED', message: String(error?.message ?? error) });
+    }
   }
 
   /** 插件卸载时释放缓存状态；此后搜索直接判定不可用（配合 index.js 的 dispose）。 */
