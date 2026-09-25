@@ -2,6 +2,19 @@
 
 All notable changes to this project.
 
+## [Unreleased]
+
+### Added
+- `scripts/privacy-scan.mjs`：扫描 git 全部历史 commit 快照里的个人用户名、
+  `C:\Users\<用户名>` 绝对路径、真实长度 API key、邮箱、Bearer token；接入
+  `docs/开发规范与事故复盘.md` 发布流程第 5 步（发布前必跑）。
+- `scripts/e2e-boot.mjs` 新增两个能力：
+  - `--user-patch <cordis.patch.yml>`：把一份真实用户 patch 复制为隔离 profile
+    的用户层，验证组合编译，并断言用户层完整覆盖 `web-search-pool` 行配置、
+    行配置不含已移除的运行时字段；
+  - `--live-search <query>`：注入真实凭据后经完整 `web` seam 真机搜索一次
+    （ Tavily 实测约 3.5s 返回，含 answer 摘要）。
+
 ## [0.3.0] - 2026-09-25
 
 ### Changed (Breaking)

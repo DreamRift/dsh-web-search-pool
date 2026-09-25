@@ -27,7 +27,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { join, resolve as pathResolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -37,7 +37,7 @@ const repoRoot = join(here, '..');
 
 const asarExtract = process.argv[2];
 if (!asarExtract) {
-  console.error('usage: node scripts/e2e-boot.mjs <app.asar 提取目录> [插件 tgz]');
+  console.error('usage: node scripts/e2e-boot.mjs <app.asar 提取目录> [插件 tgz] [--user-patch <cordis.patch.yml>] [--live-search <query>]');
   process.exit(2);
 }
 const appBootModules = join(asarExtract, 'dsh', 'node_modules');
@@ -46,25 +46,44 @@ if (!existsSync(join(appBootModules, '@deepseek-ai', 'dsh-app-boot', 'lib', 'ind
   process.exit(2);
 }
 
+function flagValue(name) {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return undefined;
+  const value = process.argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    console.error(`${name} 需要一个值`);
+    process.exit(2);
+  }
+  return value;
+}
+
 // ── 1. 隔离 home + profile ──
 // 关键安全边界：DSH 运行时的 home 解析读 `$DSH_HOME`，必须在 import 任何 app 模块前
 // 指向隔离目录，否则 E2E 会读写用户真实的 ~/.dsh。
-const userPatchIndex = process.argv.indexOf('--user-patch');
-const userPatchFile = userPatchIndex >= 0 ? process.argv[userPatchIndex + 1] : undefined;
-if (userPatchIndex >= 0 && !userPatchFile) {
-  console.error('--user-patch 需要一个 cordis.patch.yml 路径');
-  process.exit(2);
-}
+// --live-search 需要真机凭据：先把真实 home 记住（override 之前），启动时把
+// `<真实 home>/.credentials.yaml` 复制进隔离 home（仅本机临时目录，不外传）。
+const realDshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+const userPatchFile = flagValue('--user-patch');
+const liveSearchQuery = flagValue('--live-search');
 const home = process.env.DSH_E2E_HOME ?? mkdtempSync(join(tmpdir(), 'dsh-e2e-'));
 process.env.DSH_HOME = home;
 const profileName = 'e2e';
 const profileDir = join(home, 'profiles', profileName);
-const { mkdirSync, writeFileSync, readFileSync, rmSync } = await import('node:fs');
+const { mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, existsSync: fsExists } = await import('node:fs');
 mkdirSync(profileDir, { recursive: true });
 writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n');
 // 用户层：默认空数组（initProfile 的模板内容）；--user-patch 复制真实 patch 进来。
 writeFileSync(join(profileDir, 'cordis.patch.yml'), userPatchFile ? readFileSync(userPatchFile, 'utf8') : '[]\n');
 if (userPatchFile) console.log(`e2e: 使用真实用户 patch 层: ${userPatchFile}`);
+if (liveSearchQuery) {
+  const source = join(realDshHome, '.credentials.yaml');
+  if (!fsExists(source)) {
+    console.error(`--live-search 需要 ${source}（未找到）`);
+    process.exit(2);
+  }
+  copyFileSync(source, join(home, '.credentials.yaml'));
+  console.log(`e2e: live-search 已注入真实凭据（${liveSearchQuery}）`);
+}
 
 // ── 2. 安装插件 tgz（官方安装方式：profile 内 pnpm add）──
 // 位置参数：argv[2]=asar 提取目录，argv[3]=tgz（可省略，省略则现场 npm pack）；
@@ -137,7 +156,7 @@ const { ctx, shutdown } = await runProfile({
   environment: loadLayeredEnv('e2e'),
   profile: profileName,
   patchFiles: [],
-  args: [],
+  args: liveSearchQuery ? ['--no-open', '--port', '3087'] : [],
 });
 
 const failures = [];
@@ -224,6 +243,23 @@ try {
     '@deepseek-ai/dsh-client-ui-plugin-manager',
     '@deepseek-ai/dsh-client-ui-settings',
   ], 'client graph row must declare the official arrival inject list');
+
+  // ── 10. --live-search：真机搜索冒烟（走完整 web seam → search-pool provider）──
+  if (liveSearchQuery) {
+    const webService = resolveRow(['web', 'include:web']).fiber.ctx.get('web');
+    console.log(`e2e: live-search query = ${JSON.stringify(liveSearchQuery)}`);
+    const started = Date.now();
+    const result = await webService.search({ query: liveSearchQuery, maxResults: 5 });
+    const elapsed = Date.now() - started;
+    assert.ok(Array.isArray(result.sources) && result.sources.length > 0, 'live search must return sources');
+    console.log(`e2e: live-search OK in ${elapsed}ms — ${result.sources.length} 个来源${result.content ? '，含 answer 摘要' : ''}`);
+    for (const [index, source] of result.sources.entries()) {
+      console.log(`  ${index + 1}. ${source.title ?? '(无标题)'} — ${source.url}`);
+    }
+    // 后台额度刷新（ Tavily /usage ）单飞等待一拍，确认真机链路完整。
+    await new Promise((r) => setTimeout(r, 500));
+    console.log('e2e: live-search 完成（额度刷新见上方 search-pool usage 日志）');
+  }
 
   console.log('\ne2e: ALL CHECKS PASSED');
 } catch (error) {
