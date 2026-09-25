@@ -134,7 +134,7 @@ async function main() {
       '未找到 dsh-host-apiproxy/lib/index.js。',
       '已尝试：DSH_API_PROXY_INDEX、Windows APPDATA npm、node 可执行文件推导、/opt/homebrew、/usr/local。',
       '可设置 DSH_API_PROXY_INDEX 指向完整路径后重跑，例如：',
-      `  Windows:  set DSH_API_PROXY_INDEX=C:\\Users\\<you>\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-host-apiproxy\\lib\\index.js`,
+      `  Windows:  set DSH_API_PROXY_INDEX=<用户目录>\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\node_modules\\@deepseek-ai\\dsh-host-apiproxy\\lib\\index.js`,
       `  macOS/Linux: export DSH_API_PROXY_INDEX=/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js`,
     ].join('\n'));
     process.exitCode = 1;
