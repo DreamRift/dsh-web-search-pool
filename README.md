@@ -2,7 +2,7 @@
 
 为 DSH 提供 Tavily / Exa 多 key 搜索：按限流调度、失败切换及额度门禁；支持 Exa 匿名通道。密钥仅以凭据引用保存，不写入设置和日志。
 
-适配基线为 DSH 0.1.7-rc.2；不要据此推定所有后续宿主兼容。当前包版本、peer 范围和命令以 [package.json](package.json) 为准。
+适配基线为 DSH 0.1.7-rc.2 与 0.2.0-rc.1 双线（后者 2026-09-28 依桌面版 app.asar 源码核对 + e2e 实测）；不要据此推定所有后续宿主兼容。当前包版本、peer 范围和命令以 [package.json](package.json) 为准。
 
 ## 按任务读取
 

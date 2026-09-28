@@ -1,7 +1,11 @@
 /**
- * DSH 封装层的配置 schema 与选项解析（DSH 0.1.7+）。
+ * DSH 封装层的配置 schema 与选项解析（DSH 0.1.7+ / 0.2.0+）。
  * 仿照 `@deepseek-ai/dsh-web-search-deepseek` 的 `Config` + `resolveOptions` 结构。
  * 凭据引用（`apiKeyEnv`）走 `ctx.credentials`，每次操作 resolve，不缓存明文。
+ *
+ * 0.2.0 复核（2026-09-28，桌面版 0.2.0-rc.1 app.asar 实测）：`dsh-settings` 的
+ * `volatileForm`/`SettingsForms` 投影、`credentialRef`（dsh-credentials）、
+ * `launchEnvironmentOf`（dsh-launch-environment）导出面与 0.1.7 一致，schema 无需改动。
  *
  * 0.1.7 的设置模型（2026-09-25 调研，依据桌面版 0.1.7-rc.2 源码）：
  * - `@deepseek-ai/dsh-settings` 只剩 `SettingsForms` 服务（`installSettingsSection` /

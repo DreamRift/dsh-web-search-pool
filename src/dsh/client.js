@@ -1,11 +1,21 @@
 /**
- * dsh-web-search-pool 的浏览器端 client half（DSH 0.1.7+）。
+ * dsh-web-search-pool 的浏览器端 client half（DSH 0.1.7+ / 0.2.0+）。
  *
  * 在「设置 → 插件」里 dsh-web-search-pool 的 Bundle 页 → `web-search-pool` 行的配置页
  * 注册「搜索 Key 池」表单：读 `web-search-pool` settings namespace 展示并编辑 key 池配置
  * （开关 / 策略 / 优先级 / 熔断 / key 增删 / 备注 / 限流）。每个 key 的密钥与 harness 其他
  * 密钥输入一致：write-only password，不显示明文，只显示「已配置/未配置」；留空保持当前密钥，
  * 输入新值并保存则覆盖。
+ *
+ * 0.2.0 复核（2026-09-28，依据桌面版 0.2.0-rc.1 app.asar 与官方
+ * `@deepseek-ai/dsh-client-ui-settings-web-search@0.2.0-rc.1` 同构比对）：
+ * - `plugins.row.config` keyed slot 与 `<包名>#<行 id>` key 语义不变
+ *   （dsh-client-ui-plugin-manager 0.2.0 仍按 `rowConfigKey(bundle, rowId)` 建索引）；
+ * - `ctx.configForms.get(ns)` / `whileServed([ns], cb)` / `form.mutate(ops, revision)`
+ *   （Host 侧 settings.mutate，revision 冲突返回 false）与快照
+ *   `{status: loading|ready|unavailable, value, revision}` 形态不变；
+ * - `ctx.remote.credentials` describe/set 与转发事件 `credentials/reference-updated`
+ *   仍在 0.2.0 的 api-remotes 白名单内；`dsh.client.inject` 三包到达顺序不变。
  *
  * 0.1.7 适配（2026-09-25，依据桌面版 0.1.7-rc.2 源码与官方
  * `@deepseek-ai/dsh-client-ui-settings-web-search` 同构写法）：

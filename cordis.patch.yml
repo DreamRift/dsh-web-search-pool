@@ -1,4 +1,4 @@
-# dsh-web-search-pool Bundle patch for DeepSeek Harness (0.1.7+).
+# dsh-web-search-pool Bundle patch for DeepSeek Harness (0.1.7+ / 0.2.0+).
 #
 # Layer order matters: this patch is applied after every official bundle layer
 # (last write wins per row), so the `web` override below takes effect over the
@@ -6,9 +6,11 @@
 #
 # The web row is host-owned and is addressed by its loader id. DSH 0.1.1/0.1.2
 # composed the official bundle inside an `include:` group, so the row id was
-# `include:web`; DSH 0.1.7's dsh-base inserts the same row directly into the
-# root group, so the id is `web`. 0.3.0 targets 0.1.7+ and patches `web`; the
-# Host half additionally probes `include:web` at runtime when syncing the row.
+# `include:web`; DSH 0.1.7 and 0.2.0 (dsh-base cordis.patch.yml verified
+# 2026-09-28 against the 0.2.0-rc.1 desktop app) insert the same row directly
+# into the root group, so the id is `web`. 0.4.0 targets both lines and patches
+# `web`; the Host half additionally probes `include:web` at runtime when
+# syncing the row.
 #
 # An id-targeted patch replaces the whole config rather than deep-merging it:
 # the official web row carries `fetchProvider: http` beside `searchProvider`,
@@ -22,10 +24,10 @@
     fetchProvider: http
 
 # Insert the search pool provider definition.
-# Its loader row id doubles as the 0.1.7 settings namespace (`web-search-pool`):
-# the Config schema of this row is auto-projected into the Plugins page form,
-# and the client card registers into `plugins.row.config` under the key
-# `dsh-web-search-pool#web-search-pool`.
+# Its loader row id doubles as the settings namespace (`web-search-pool`,
+# 0.1.7 / 0.2.0 form key): the Config schema of this row is auto-projected
+# into the Plugins page form, and the client card registers into
+# `plugins.row.config` under the key `dsh-web-search-pool#web-search-pool`.
 - insert:
     - id: web-search-pool
       name: dsh-web-search-pool

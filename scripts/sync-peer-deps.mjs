@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * 把 DSH 0.1.7-rc.2（app.asar 提取副本）里插件测试需要的 @deepseek-ai peer 包
- * 按 import 传递闭包拷贝到工作区插件的 node_modules（node_modules 已 gitignore）。
+ * 把 DSH 桌面版（app.asar 提取副本；0.1.7-rc.2 与 0.2.0-rc.1 均适用）里插件测试
+ * 需要的 @deepseek-ai peer 包按 import 传递闭包拷贝到工作区插件的 node_modules
+ * （node_modules 已 gitignore）。
  *
  * 用法：node scripts/sync-peer-deps.mjs <asar-extract-dir>
  */

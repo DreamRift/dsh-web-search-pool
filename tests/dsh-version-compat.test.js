@@ -1,7 +1,7 @@
 /**
  * dsh-version-compat.test.js
  *
- * 版本兼容与装配契约（0.3.0 重生，替代 0.1.2 时代的旧守卫）。
+ * 版本兼容与装配契约（0.3.0 重生，替代 0.1.2 时代的旧守卫；0.4.0 增加 0.2.0 线）。
  *
  * 历史事故线：
  * - 0.1.2 删除 `@deepseek-ai/dsh-settings` 的 installSettingsSection 等导出，
@@ -10,6 +10,10 @@
  *   自动投影，namespace = 行 id）、client 的 `settingsScope` 服务（0.2.1 的 web boot
  *   崩溃根因）、`settings.plugin.item` slot（改 plugins.row.config）、`include:web`
  *   行 id（改根组 `web`）。
+ * - 0.2.0 把 loader 拆到独立包 `@deepseek-ai/cordis-plugin-loader`，但
+ *   `loader/volatile-update`、`plugins.row.config`、`configForms`、`remote.credentials`
+ *   契约全部保留（2026-09-28 依桌面版 0.2.0-rc.1 app.asar 实测）；peer 范围扩为
+ *   0.1.7 与 0.2.0 双线。
  *
  * 本测试守住四类不能靠手 review 保证的事实：
  * 1. peer 范围 vs 运行时（DSH 启动时的兼容门：不满足 → bundle 层被整体跳过）；
@@ -35,8 +39,8 @@ function codeOf(source) {
     .join('\n');
 }
 
-/** 插件声明支持的 DSH 运行时（桌面版 0.1.7-rc.2 实测线）。 */
-const RUNTIMES = ['0.1.7-rc.1', '0.1.7-rc.2', '0.1.7'];
+/** 插件声明支持的 DSH 运行时（桌面版 0.1.7-rc.2 / 0.2.0-rc.1 实测线）。 */
+const RUNTIMES = ['0.1.7-rc.1', '0.1.7-rc.2', '0.1.7', '0.2.0-rc.1'];
 
 // ── 迷你 semver：只覆盖本插件用到的范围形式（^ / ~ / 精确 / || 联合），
 //    prerelease 按 DSH 的 includePrerelease 语义比较。 ──
@@ -118,15 +122,16 @@ test('compat: 所有 dsh* peer 范围满足受支持的运行时', () => {
   }
   // 老化/越界运行时必须被拒绝（防止范围意外放宽）。
   assert.equal(satisfies('0.1.6', pkg.peerDependencies['@deepseek-ai/dsh-web']), false, '0.1.6 is below the declared floor');
-  assert.equal(satisfies('0.2.0', pkg.peerDependencies['@deepseek-ai/dsh-web']), false, '0.2.0 is outside the declared range');
+  assert.equal(satisfies('0.2.0', pkg.peerDependencies['@deepseek-ai/dsh-web']), true, '0.2.0 final is inside the 0.2.0 line range');
+  assert.equal(satisfies('0.3.0', pkg.peerDependencies['@deepseek-ai/dsh-web']), false, '0.3.0 is outside the declared range');
 });
 
-test('compat: bundle patch 目标为 0.1.7 的 web 行并 restate fetchProvider', () => {
+test('compat: bundle patch 目标为根组 web 行并 restate fetchProvider', () => {
   const patch = codeOf(read('../cordis.patch.yml'));
   assert.match(patch, /- id: web\n/, 'patch must target the root-level web row');
   assert.match(patch, /searchProvider: search-pool/, 'patch must select the search-pool provider');
   assert.match(patch, /fetchProvider: http/, 'patch must restate fetchProvider (id-targeted patch replaces the whole config)');
-  assert.equal(patch.includes('include:web'), false, '0.1.7 no longer nests the web row in include:');
+  assert.equal(patch.includes('include:web'), false, '0.1.7/0.2.0 no longer nests the web row in include:');
   assert.match(patch, /- id: web-search-pool\n/, 'patch must insert the provider row');
   assert.match(patch, /name: dsh-web-search-pool/, 'provider row mounts the package entry');
 });

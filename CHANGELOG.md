@@ -2,9 +2,13 @@
 
 All notable changes to this project.
 
-## [Unreleased]
+## [0.4.0] - 2026-09-28
 
 ### Added
+- **支持 DSH 0.2.0 线**：peer 范围从 `^0.1.7-rc.1` 扩为
+  `^0.1.7-rc.1 || ^0.2.0-rc.1`（0.1.7 与 0.2.0 双线并存），桌面版 0.2.0-rc.1
+  的启动兼容门（`evaluatePluginCompatibility`，`satisfies(运行时, 区间, {includePrerelease})`）
+  放行本 bundle 层。
 - `scripts/privacy-scan.mjs`：扫描 git 全部历史 commit 快照里的个人用户名、
   `C:\Users\<用户名>` 绝对路径、真实长度 API key、邮箱、Bearer token；接入
   `docs/开发规范与事故复盘.md` 发布流程第 5 步（发布前必跑）。
@@ -14,6 +18,26 @@ All notable changes to this project.
     行配置不含已移除的运行时字段；
   - `--live-search <query>`：注入真实凭据后经完整 `web` seam 真机搜索一次
     （ Tavily 实测约 3.5s 返回，含 answer 摘要）。
+
+### Changed
+- **0.2.0 适配核对（无行为改动）**：0.2.0 把 loader 拆为独立包
+  `@deepseek-ai/cordis-plugin-loader`（cordis 4.0.4 的 peer），逐项核对宿主 app.asar
+  源码确认本插件依赖的契约无破坏性变化——`ctx.web.registerSearchProvider` 与 provider 面
+  （`id`/`available()`/`search()`）、`loader.resolve/update` 与
+  **`loader/volatile-update`**、Config schema 的 volatile 投影与 Ref 运行期、
+  `plugins.row.config` keyed slot（key = `<包名>#<行 id>`）、`ctx.configForms`
+  （`get`/`whileServed`/`mutate(ops, revision)`）、`ctx.remote.credentials` describe/set
+  与转发事件 `credentials/reference-updated`、`dsh.client.inject` 三包到达顺序、
+  dsh-base 根组 `web` 行（`searchProvider`/`fetchProvider` 双字段 restate 语义）。
+  因此 0.2.0 线只放宽 peer 范围，src/ 无功能改动。
+
+### Verified
+- 桌面版 **0.2.0-rc.1**（`resources/app.asar` 提取）源码核对 + `scripts/e2e-boot.mjs`
+  真实启动全绿：skippedBundles 为空、`web` 行 patch 生效（searchProvider=search-pool 且
+  fetchProvider 保留）、`web-search-pool` 行 ACTIVE、settings.describe 投影全部字段、
+  settings.update 端到端（不重挂 + volatile 就地提交 + web 行双向同步 + patch 落盘）、
+  client-modules 图谱下发本插件浏览器 bundle。
+- 本地测试 122 个用例全绿（peer 包已同步为 0.2.0-rc.1 副本）。
 
 ## [0.3.0] - 2026-09-25
 

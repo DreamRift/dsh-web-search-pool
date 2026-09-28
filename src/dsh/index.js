@@ -2,6 +2,17 @@
  * DSH composition 插件入口：注册搜索池 provider 到 `ctx.web`。
  * `inject: ['web']`，不发布任何服务（provider 只消费 web 服务），可 loose 挂在 preset 或 host patch 里。
  *
+ * 0.2.0 适配（2026-09-28，依据桌面版 0.2.0-rc.1 app.asar 提取源码实测）：
+ * 宿主把 loader 拆成独立包 `@deepseek-ai/cordis-plugin-loader`（cordis 4.0.4 的 peer），
+ * 但本入口依赖的契约逐项核对无破坏性变化：
+ * - `ctx.web.registerSearchProvider`（dsh-web 的 `WebRuntime`）与 provider 面
+ *   （`id` / `available()` / `search(request, signal)`）不变；
+ * - `loader.resolve(id)` / `loader.update(id, {config})` 与事件 **`loader/volatile-update`**
+ *   仍由 cordis-plugin-loader 提供（volatile-only 变更就地提交 Refs 并通知 owning fiber）；
+ * - `WebError` / `credentialRef` / `launchEnvironmentOf` / volatile Ref 协议全部保留；
+ * - `dsh-settings` 的表单投影（schema volatile → `SettingsForms.describe`）同样保留。
+ * 因此 0.2.0 线无需代码改动，只放宽 peer 范围（见下）。
+ *
  * 0.1.7 适配（2026-09-25，依据桌面版 0.1.7-rc.2 源码）：
  * - **settings section 注册接口已移除**：`installSection` / `installSettingsSection`
  *   都不存在了。0.1.7 的设置表单由 loader 行的 Config schema 自动投影（namespace = 行 id），
@@ -10,11 +21,13 @@
  *   （`config.enabled.get()`），编辑经 `settings.mutate` 写入 profile patch 后就地提交，
  *   不重挂插件；变化通知事件是 `loader/volatile-update`（旧的 `settings/updated` 已移除）。
  * - **web 行 id 变化**：0.1.1/0.1.2 官方 bundle 把 `web` 行插在 include 组内（`include:web`），
- *   0.1.7 的 dsh-base 直接把 `web` 行插在根组（`web`）。本入口运行时探测两者，先新后旧。
+ *   0.1.7 起 dsh-base 直接把 `web` 行插在根组（`web`，0.2.0 的 dsh-base 实测仍是根组）。
+ *   本入口运行时探测两者，先新后旧。
  * - 运行时额度快照不再写 settings（0.1.7 的 settings 写入会持久化进 profile patch），
  *   Host 只做进程内刷新，观测走 `ctx.logger`。
  *
- * 历史兼容说明：0.3.0 起仅支持 DSH 0.1.7+（peer 范围 `^0.1.7-rc.1`）；
+ * 历史兼容说明：0.4.0 起支持 DSH 0.1.7+ 与 0.2.0+ 两条线
+ * （peer 范围 `^0.1.7-rc.1 || ^0.2.0-rc.1`）；
  * 0.1.1-rc.x / 0.1.2 的 settingsScope / installSection 路径已随版本线移除。
  * @module dsh-web-search-pool
  */
@@ -38,7 +51,7 @@ export const inject = ['web'];
 export const SETTINGS_NAMESPACE = 'web-search-pool';
 
 /**
- * `web` 行的 loader id：0.1.7 的 dsh-base 插在根组（`web`）；
+ * `web` 行的 loader id：0.1.7 与 0.2.0 的 dsh-base 都插在根组（`web`）；
  * 旧版（0.1.1/0.1.2）在 include 子树里（`include:web`）。
  * 运行时按当前宿主实际存在的行解析（见 {@link resolveWebRowId}）。
  */
