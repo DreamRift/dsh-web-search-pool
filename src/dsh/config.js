@@ -71,6 +71,12 @@ const exaSpec = z.object({
  */
 export const Config = z.object({
   enabled: z.boolean().default(true).volatile(),
+  /**
+   * 池不可用或池内全部 key 失败时是否回退 DeepSeek 官方搜索。
+   * 默认 false：启用即「完全替代」——官方搜索不会被调用，模型只看到中性的
+   * 「搜索暂时不可用」，不会察觉背后是 key 池。
+   */
+  fallbackToOfficial: z.boolean().default(false).volatile(),
   providers: z.object({
     tavily: tavilySpec,
     exa: exaSpec,
@@ -135,6 +141,7 @@ export function resolveOptions(ctx, config) {
 
   return {
     enabled: config.enabled ?? true,
+    fallbackToOfficial: config.fallbackToOfficial === true,
     available: entries.length > 0 && (config.enabled ?? true),
     entries,
     strategy: config.strategy ?? DEFAULTS.strategy,

@@ -106,6 +106,8 @@ export class SearchPoolProvider {
     this.resolveOptions = resolveOptions;
     this.logUsage = options.logUsage;
     this.id = SEARCH_POOL_PROVIDER_ID;
+    /** 禁用态的官方委托（由 takeover 注入）；返回 null 表示没有可用的官方实现。 */
+    this._resolveDelegate = typeof options.delegate === 'function' ? options.delegate : null;
     this._poolCache = null;
     /** 上一次建池时的 options 引用（配合 samePoolOptions 决定复用）。 */
     this._poolOptions = null;
@@ -115,9 +117,23 @@ export class SearchPoolProvider {
     this._disposed = false;
   }
 
-  /** 本地可用性检查：至少声明了一个 key（不发网络）。 */
+  /**
+   * 设置禁用态委托解析器（takeover 在构造后注入；也可在测试中直接调用）。
+   * @param {(() => { search: Function, available: Function } | null) | null} resolve
+   */
+  setDelegate(resolve) {
+    this._resolveDelegate = typeof resolve === 'function' ? resolve : null;
+  }
+
+  /** 本地可用性检查：启用时看 key 池；禁用时看官方委托（都不发网络）。 */
   available() {
-    return !this._disposed && this.resolveOptions().available;
+    if (this._disposed) return false;
+    const options = this.resolveOptions();
+    if (options.enabled === false) {
+      const delegate = this._resolveDelegate?.();
+      return delegate != null && delegate.available() === true;
+    }
+    return options.available;
   }
 
   /** 配置快照变化时重建 pool，否则复用（保留冷却/令牌状态）。 */
@@ -270,23 +286,31 @@ export class SearchPoolProvider {
 
   async search(request, signal) {
     if (this._disposed) {
-      throw new WebError('search-pool provider is disposed', 'WEB_PROVIDER_UNAVAILABLE');
+      throw new WebError('Web search is unavailable: the search provider has been disposed', 'WEB_PROVIDER_UNAVAILABLE');
+    }
+    // 禁用态：委托官方 provider（保持 searchProvider: search-pool 的 profile 仍可用）。
+    if (this.resolveOptions().enabled === false) {
+      const delegate = this._resolveDelegate?.();
+      if (delegate == null) {
+        throw new WebError('Web search is unavailable: no search provider is configured', 'WEB_PROVIDER_UNAVAILABLE');
+      }
+      return delegate.search(request, signal);
     }
     try {
       return await this._search(request, signal);
     } catch (error) {
       if (signal?.aborted === true || isAbortError(error)) {
-        throw new WebError('search-pool search aborted', 'WEB_ABORTED', { cause: error });
+        throw new WebError('Web search was aborted', 'WEB_ABORTED', { cause: error });
       }
       if (error instanceof WebError) throw error;
-      throw new WebError(`search-pool search failed: ${String(error?.message ?? error)}`, 'WEB_PROVIDER_ERROR', { cause: error });
+      throw new WebError(`Web search failed: ${String(error?.message ?? error)}`, 'WEB_PROVIDER_ERROR', { cause: error });
     }
   }
 
   async _search(request, signal) {
     const options = this.resolveOptions();
     if (!options.available) {
-      throw new WebError('search-pool has no configured search key; add at least one key', 'WEB_PROVIDER_CREDENTIAL_MISSING');
+      throw new WebError('Web search is not configured: add at least one search key', 'WEB_PROVIDER_CREDENTIAL_MISSING');
     }
     const pool = this._getPool(options);
     const maxAttempts = pool.keyPool.totalKeys;
@@ -331,7 +355,7 @@ export class SearchPoolProvider {
         pool.scheduler.recordError(entry);
         options.recordRequest?.({ provider: entry.provider, keyId: entry.id, ok: false, code: 'CREDENTIAL_MISSING' });
         if (lastError == null || lastError.code === 'WEB_PROVIDER_CREDENTIAL_MISSING') {
-          lastError = new WebError(`search-pool key "${entry.credentialRef ?? entry.id}" is not configured`, 'WEB_PROVIDER_CREDENTIAL_MISSING');
+          lastError = new WebError('Web search is not configured: a search key is missing', 'WEB_PROVIDER_CREDENTIAL_MISSING');
         }
         continue;
       }
@@ -361,7 +385,7 @@ export class SearchPoolProvider {
             remaining: usage.remaining,
           });
           if (lastError == null || lastError.code === 'WEB_PROVIDER_CREDENTIAL_MISSING') {
-            lastError = new RateLimitError(`Tavily key "${entry.credentialRef}" quota exhausted`, options.quotaExhaustedCooldownMs);
+            lastError = new RateLimitError('Web search quota exhausted', options.quotaExhaustedCooldownMs);
           }
           continue;
         }
@@ -400,7 +424,7 @@ export class SearchPoolProvider {
             message: `request timed out after ${timeoutMs}ms`,
           });
           if (lastError == null || lastError.code === 'WEB_PROVIDER_CREDENTIAL_MISSING') {
-            lastError = new ProviderHttpError(`search-pool key "${entry.credentialRef ?? entry.id}" request timed out after ${timeoutMs}ms`, 0, { cause: error });
+            lastError = new ProviderHttpError(`Web search request timed out after ${timeoutMs}ms`, 0, { cause: error });
           }
           continue;
         }
@@ -430,20 +454,21 @@ export class SearchPoolProvider {
     }
 
     if (lastError != null) {
-      // RateLimitError 保留语义地转成 WebError（外层只认 WebError code 集合），message 携带 retry-after。
+      // 外层只认 WebError 的 code 集合；模型可见文本保持中性，供应商/端点细节只留在 cause 与日志。
       if (lastError instanceof RateLimitError) {
         throw new WebError(
-          `search-pool search failed: rate limited (${lastError.message}; retry after ${lastError.retryAfterMs}ms)`,
+          `Web search failed: rate limited (retry after ${lastError.retryAfterMs}ms)`,
           'WEB_PROVIDER_ERROR',
           { cause: lastError },
         );
       }
-      throw lastError;
+      if (lastError instanceof WebError) throw lastError;
+      throw new WebError('Web search failed: the search provider returned an error', 'WEB_PROVIDER_ERROR', { cause: lastError });
     }
-    throw new WebError('search-pool has no usable search key (all cooling or rate-limited)', 'WEB_PROVIDER_UNAVAILABLE');
+    throw new WebError('Web search is temporarily unavailable: no usable search key (cooling down or rate limited)', 'WEB_PROVIDER_UNAVAILABLE');
   }
 }
 
 function throwIfAborted(signal) {
-  if (signal?.aborted === true) throw new DOMException('search-pool search aborted', 'AbortError');
+  if (signal?.aborted === true) throw new DOMException('Web search aborted', 'AbortError');
 }

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Search Key Pool",
-    "description": "Multi-key, multi-provider web search (Tavily + Exa) with rate-limit aware load balancing"
+    "description": "Multi-key, multi-provider web search (Tavily + Exa) that transparently takes over the official search, with rate-limit aware load balancing"
   }
 }

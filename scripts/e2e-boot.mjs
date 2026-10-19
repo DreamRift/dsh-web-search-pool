@@ -156,7 +156,7 @@ const { ctx, shutdown } = await runProfile({
   environment: loadLayeredEnv('e2e'),
   profile: profileName,
   patchFiles: [],
-  args: liveSearchQuery ? ['--no-open', '--port', '3087'] : [],
+  args: ['--no-open', '--port', '3087'],
 });
 
 const failures = [];
@@ -172,10 +172,24 @@ try {
   };
   const webRow = resolveRow(['web', 'include:web']);
   console.log('e2e: web row config =', JSON.stringify(webRow.options.config));
-  assert.equal(webRow.options.config.searchProvider, 'search-pool', 'web.searchProvider 必须被 patch 改写');
+  // 0.5.0：不再改写 web 行；接管发生在 ctx.web.search 服务方法上。
+  assert.notEqual(webRow.options.config.searchProvider, 'search-pool', 'web.searchProvider 不得被 patch 改写');
   assert.equal(webRow.options.config.fetchProvider, 'http', 'web.fetchProvider 必须保留');
 
-  // ── 6. 插件行 ACTIVE ──
+  // ── 6. 插件行 ACTIVE + 服务级接管已安装 ──
+  const webService = webRow.fiber.ctx.get('web');
+  assert.ok(Object.getOwnPropertyDescriptor(webService, 'search'), 'ctx.web.search 必须被运行时接管（own wrapper）');
+  console.log('e2e: ctx.web.search takeover installed');
+  // 没有真实凭据时：真实宿主里调用必须得到中性错误，且不落到官方 provider。
+  if (!liveSearchQuery) await assert.rejects(
+    () => webService.search({ query: 'e2e takeover probe', maxResults: 3 }),
+    (error) => {
+      assert.equal(error?.code, 'WEB_PROVIDER_UNAVAILABLE', '池无 key 时必须抛中性不可用错误');
+      assert.doesNotMatch(String(error?.message), /tavily|exa|deepseek|official|key/i, '错误文本不得泄露实现');
+      return true;
+    },
+  );
+  if (!liveSearchQuery) console.log('e2e: takeover intercepts real host web.search with a neutral error');
   const poolEntry = resolveRow(['web-search-pool', 'include:web-search-pool']);
   assert.ok(poolEntry?.fiber, 'web-search-pool 行必须有 fiber');
   assert.equal(poolEntry.fiber.state, 2, 'web-search-pool 行必须 ACTIVE');
@@ -185,18 +199,20 @@ try {
   if (userPatchFile) {
     const config = poolEntry.options.config;
     const tavilyKeys = config.providers?.tavily?.keys ?? [];
-    const exaKeys = config.providers?.exa?.keys ?? [];
-    assert.equal(tavilyKeys.length, 3, '用户层必须带入 3 个 Tavily key');
-    assert.deepEqual(tavilyKeys.map((k) => k.apiKeyEnv), ['TAVILY_API_KEY_1', 'TAVILY_API_KEY_2', 'TAVILY_API_KEY_3']);
-    assert.equal(exaKeys.length, 1, '用户层必须带入 1 个匿名 Exa key');
-    assert.equal(exaKeys[0].apiKeyEnv ?? '', '', 'Exa key 必须留空（匿名免费层）');
-    assert.equal(config.strategy, 'weighted-round-robin');
-    assert.equal(config.requestTimeoutMs, 20000);
+    assert.ok(tavilyKeys.length > 0, '用户层必须带入至少一个 Tavily key');
+    for (const key of tavilyKeys) {
+      assert.match(String(key.apiKeyEnv ?? ''), /^TAVILY_API_KEY_[A-Za-z0-9_]+$/, 'Tavily key 必须是凭据引用名');
+    }
+    // id 定位的 patch 整体替换该行 config，schema 默认值由 fiber 校验后补齐。
+    const fiberConfig = poolEntry.fiber.config;
+    const valueOf = (field) => (field != null && typeof field.get === 'function' ? field.get() : field);
+    assert.equal(valueOf(fiberConfig.strategy), 'weighted-round-robin');
+    assert.equal(valueOf(fiberConfig.requestTimeoutMs), 20000);
     // 运行时字段（0.3.0 已从 schema 移除）不得混进行配置。
     for (const runtimeField of ['usage', 'usageDiagnostic', 'usageRefreshTick']) {
       assert.equal(Object.hasOwn(config, runtimeField), false, `行配置不得包含已移除的运行时字段 ${runtimeField}`);
     }
-    console.log('e2e: 用户层 patch 编译通过并完整覆盖行配置（3 Tavily + 1 匿名 Exa）');
+    console.log(`e2e: 用户层 patch 编译通过并完整覆盖行配置（${tavilyKeys.length} 个 Tavily key）`);
   }
 
   // ── 7. settings.describe 投影 ──
@@ -211,23 +227,24 @@ try {
   }
   assert.equal(form.value.enabled, true);
 
-  // ── 8. settings.update 端到端（patch 写入 + volatile 就地提交 + web 行同步）──
+  // ── 8. settings.update 端到端（patch 写入 + volatile 就地提交，不改 web 行）──
   const fiberBefore = poolEntry.fiber;
+  const webRowConfigBefore = JSON.stringify(resolveRow(['web', 'include:web']).options.config);
   await settings.update('web-search-pool', { enabled: false });
   await ctx.get('loader').await();
   assert.equal(poolEntry.fiber, fiberBefore, 'volatile 更新不得重挂插件');
   assert.equal(poolEntry.fiber.config.enabled.get(), false, 'volatile Ref 必须就地更新');
-  assert.equal(resolveRow(['web', 'include:web']).options.config.searchProvider, 'deepseek-official', '关闭开关必须同步 web 行');
+  assert.equal(JSON.stringify(resolveRow(['web', 'include:web']).options.config), webRowConfigBefore, '关闭开关不得改写 web 行');
   const patchText = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8');
   assert.match(patchText, /id: web-search-pool/, 'profile patch 必须落盘 volatile 值');
   assert.match(patchText, /enabled: false/, 'profile patch 必须记录 enabled: false');
-  console.log('e2e: settings.update 端到端通过（不重挂 + web 行同步 + patch 落盘）');
+  console.log('e2e: settings.update 端到端通过（不重挂 + web 行不变 + patch 落盘）');
 
-  // 恢复开启，验证反向同步。
+  // 恢复开启。
   await settings.update('web-search-pool', { enabled: true });
   await ctx.get('loader').await();
   assert.equal(poolEntry.fiber.config.enabled.get(), true);
-  assert.equal(resolveRow(['web', 'include:web']).options.config.searchProvider, 'search-pool', '重新开启必须同步回 search-pool');
+  assert.equal(JSON.stringify(resolveRow(['web', 'include:web']).options.config), webRowConfigBefore, '重新开启也不改写 web 行');
 
   // ── 9. client-modules 图谱下发本插件的浏览器 bundle ──
   // 0.2.1 的“无插件页面/重启报错”最终的表现就是浏览器侧 entry 起不来；

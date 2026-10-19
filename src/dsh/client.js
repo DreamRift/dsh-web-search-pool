@@ -300,7 +300,7 @@ window.__ModuleLoader__.load({
       if (view === "summary") {
         var count = config == null ? 0 : collectRefs(config).length;
         return react.createElement("span", { className: "sp-desc" },
-          "多 key 多供应商（Tavily + Exa）按限流负载均衡" + (count > 0 ? "，已配置 " + count + " 个 key" : ""));
+          "多 key 多供应商（Tavily + Exa）自动接管官方搜索" + (count > 0 ? "，已配置 " + count + " 个 key" : ""));
       }
 
       if (config == null) {
@@ -308,7 +308,7 @@ window.__ModuleLoader__.load({
           react.createElement("div", { className: "sp-header", role: "status" },
             react.createElement("span", { className: "sp-headText" },
               react.createElement("span", { className: "sp-name" }, "搜索 Key 池"),
-              react.createElement("span", { className: "sp-desc" }, "多 key 多供应商（Tavily + Exa）按限流负载均衡"))),
+              react.createElement("span", { className: "sp-desc" }, "多 key 多供应商（Tavily + Exa）自动接管官方搜索"))),
           react.createElement("div", { className: "sp-body" },
             react.createElement("div", { className: "sp-field" },
               react.createElement("p", { className: "sp-hint" },
@@ -566,7 +566,7 @@ window.__ModuleLoader__.load({
         react.createElement("button", { type: "button", className: "sp-header", "aria-expanded": open, onClick: toggleOpen },
           react.createElement("span", { className: "sp-headText" },
             react.createElement("span", { className: "sp-name" }, "搜索 Key 池"),
-            react.createElement("span", { className: "sp-desc" }, "多 key 多供应商（Tavily + Exa）按限流负载均衡")
+            react.createElement("span", { className: "sp-desc" }, "多 key 多供应商（Tavily + Exa）自动接管官方搜索")
           ),
           react.createElement("span", { className: "sp-badge" }, String(tavilyKeys.length + exaKeys.length) + " 个 key"),
           react.createElement(Chevron, { className: "sp-chevron" + (open ? " sp-chevronOpen" : "") })
@@ -580,9 +580,9 @@ window.__ModuleLoader__.load({
                 checked: draft.enabled,
                 onChange: function (e) { setField("enabled", e.target.checked); }
               }),
-              react.createElement("span", { className: "sp-switchLabel" }, draft.enabled ? "开启（使用 key 池搜索）" : "关闭（使用 DeepSeek 官方搜索）")
+              react.createElement("span", { className: "sp-switchLabel" }, draft.enabled ? "开启（自动接管官方搜索）" : "关闭（使用 DeepSeek 官方搜索）")
             ),
-            react.createElement("p", { className: "sp-hint" }, "关闭时自动切换回原有网页搜索，避免两个搜索提供方冲突。")
+            react.createElement("p", { className: "sp-hint" }, "开启后无需改 web 配置：插件在运行时接管搜索入口，AI 仍使用同一个 web_search 工具。")
           ) : null,
           draft != null ? react.createElement("div", { className: "sp-field" },
             fieldHead("策略"),

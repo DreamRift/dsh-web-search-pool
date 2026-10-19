@@ -1,38 +1,22 @@
 # dsh-web-search-pool Bundle patch for DeepSeek Harness (0.1.7+ / 0.2.0+).
 #
-# Layer order matters: this patch is applied after every official bundle layer
-# (last write wins per row), so the `web` override below takes effect over the
-# base bundle's own `web` row.
+# 0.5.0（2026-10-19）起本 patch **不再改写官方 'web' 行**。
+# 官方搜索的接管发生在运行时（src/dsh/takeover.js 直接替换 ctx.web.search），
+# 因此不依赖 web.searchProvider、也不会和用户 profile 的 cordis.patch.yml 或
+# 官方 Web search 设置页互相覆盖。0.4.0 的 web 行覆盖写法会在 profile 层被覆盖，
+# 表现为“启用了 key 池却仍走官方 API key”，已移除。
 #
-# The web row is host-owned and is addressed by its loader id. DSH 0.1.1/0.1.2
-# composed the official bundle inside an `include:` group, so the row id was
-# `include:web`; DSH 0.1.7 and 0.2.0 (dsh-base cordis.patch.yml verified
-# 2026-09-28 against the 0.2.0-rc.1 desktop app) insert the same row directly
-# into the root group, so the id is `web`. 0.4.0 targets both lines and patches
-# `web`; the Host half additionally probes `include:web` at runtime when
-# syncing the row.
-#
-# An id-targeted patch replaces the whole config rather than deep-merging it:
-# the official web row carries `fetchProvider: http` beside `searchProvider`,
-# so both must be restated or the fetch-provider pin is silently dropped
-# (web_fetch would then rely on auto-selection).
-
-# Override the official 'web' row to use search-pool provider
-- id: web
-  config:
-    searchProvider: search-pool
-    fetchProvider: http
-
-# Insert the search pool provider definition.
-# Its loader row id doubles as the settings namespace (`web-search-pool`,
-# 0.1.7 / 0.2.0 form key): the Config schema of this row is auto-projected
-# into the Plugins page form, and the client card registers into
-# `plugins.row.config` under the key `dsh-web-search-pool#web-search-pool`.
+# 这里只插入搜索池自身的 loader 行；行 id 同时是 settings namespace
+# （web-search-pool），Config schema 自动投影成插件页表单，client card 注册到
+# plugins.row.config 的 key dsh-web-search-pool#web-search-pool。
 - insert:
     - id: web-search-pool
       name: dsh-web-search-pool
       config:
         enabled: true
+        # 池不可用/全部 key 失败时是否回退官方搜索。默认 false = 启用即完全替代；
+        # 回退时模型看到的仍是同一个 web_search 工具，只是结果来自官方。
+        fallbackToOfficial: false
         providers:
           tavily:
             keys: []

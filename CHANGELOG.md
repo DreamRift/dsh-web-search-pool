@@ -2,6 +2,46 @@
 
 All notable changes to this project.
 
+## [0.5.0] - 2026-10-19
+
+### Fixed
+- **「启用搜索 Key 池」在 0.2.1-rc.2 上未真正生效**：0.4.0 只在 `apply` 时把
+  `web` 行的 `searchProvider` 改成 `search-pool`。官方 `WebRuntime.search` 是**调用时**
+  才按该字段选 provider，而用户 profile 的 `cordis.patch.yml` 在 bundle 层之后应用、
+  官方 Web search 设置页也写同一行，覆盖后请求仍走 `deepseek-search-api` /
+  `deepseek-official`（DeepSeek 官方 API key）。
+
+### Changed (Breaking)
+- **接管点改为 `ctx.web.search` 服务方法**（`src/dsh/takeover.js`）：`apply` 时在 web
+  服务实例上安装可逆 wrapper，启用态直接走 key 池；不依赖 provider id、provider 注册
+  顺序、`web.searchProvider` 或行 id，因此不会被 profile patch / 官方设置页覆盖。
+  关闭时委托回原 `web.search`，卸载时按 descriptor 恢复。
+- **`cordis.patch.yml` 不再改写官方 `web` 行**，只插入 `web-search-pool` 行。
+- **模型无感**：wrapper 返回与官方 seam 同形的 `{ content?, sources, truncated }`，
+  去掉池内部 `query` / `provider` 字段，并按 `maxResults` 截断；池不可用/失败时默认
+  **不回退官方**，抛中性的 `WEB_PROVIDER_UNAVAILABLE`（不含 Tavily / Exa / key /
+  官方端点字样），详细原因只写 `ctx.logger` 与 `error.cause`。
+- **降级路径**：若宿主把 `web.search` 冻结/设为不可配置，退回替换
+  `deepseek-search-api` / `deepseek-official` provider 对象的 `search` / `available`；
+  若 `searchProviders` 也不可检查，再退回配置同步。
+- **清理注册到 `ctx.effect`**：cordis 4.0.4 的 Loader 不把 `apply` 的返回值当 disposer
+  （2026-10-19 实测），原写法在卸载时不会恢复官方方法。
+
+### Added
+- `fallbackToOfficial`（默认 `false`）：池不可用/全部 key 失败时是否回退官方搜索；
+  设置卡片不直接编辑，可在 profile patch 中打开。
+- 测试：服务级接管、未来 provider id、maxResults 截断、中性错误、关闭委托、
+  `fallbackToOfficial` 回退、`web.search` 不可 patch 的降级、dispose 恢复；
+  合计 131 个用例全绿（`node scripts/run-tests.mjs`）。
+
+### Verified
+- 本机桌面版 **0.2.1-rc.2**（`resources/app.asar` 源码核对）：
+  - 官方搜索两条链路 `deepseek-search-api`（`POST https://api.deepseek.com/v1/tools/search`）
+    与 `deepseek-official`（`POST https://api.deepseek.com/anthropic/v1/messages` +
+    `web_search_20250305` server tool）均在 `WebRuntime.search` 内部按配置选择；
+  - `web_search` 工具只调用 `ctx.web.search`，因此服务级接管覆盖所有官方调用路径；
+  - `web_fetch` 走 `ctx.web.fetch`，不受影响。
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

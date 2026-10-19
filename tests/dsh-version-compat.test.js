@@ -40,7 +40,7 @@ function codeOf(source) {
 }
 
 /** 插件声明支持的 DSH 运行时（桌面版 0.1.7-rc.2 / 0.2.0-rc.1 实测线）。 */
-const RUNTIMES = ['0.1.7-rc.1', '0.1.7-rc.2', '0.1.7', '0.2.0-rc.1'];
+const RUNTIMES = ['0.1.7-rc.1', '0.1.7-rc.2', '0.1.7', '0.2.0-rc.1', '0.2.1-rc.2'];
 
 // ── 迷你 semver：只覆盖本插件用到的范围形式（^ / ~ / 精确 / || 联合），
 //    prerelease 按 DSH 的 includePrerelease 语义比较。 ──
@@ -126,14 +126,13 @@ test('compat: 所有 dsh* peer 范围满足受支持的运行时', () => {
   assert.equal(satisfies('0.3.0', pkg.peerDependencies['@deepseek-ai/dsh-web']), false, '0.3.0 is outside the declared range');
 });
 
-test('compat: bundle patch 目标为根组 web 行并 restate fetchProvider', () => {
+test('compat: bundle patch 只插入 provider 行，不再改写官方 web 行', () => {
   const patch = codeOf(read('../cordis.patch.yml'));
-  assert.match(patch, /- id: web\n/, 'patch must target the root-level web row');
-  assert.match(patch, /searchProvider: search-pool/, 'patch must select the search-pool provider');
-  assert.match(patch, /fetchProvider: http/, 'patch must restate fetchProvider (id-targeted patch replaces the whole config)');
-  assert.equal(patch.includes('include:web'), false, '0.1.7/0.2.0 no longer nests the web row in include:');
+  assert.equal(patch.includes('- id: web\n'), false, 'patch must not target the official web row');
+  assert.equal(patch.includes('searchProvider: search-pool'), false, 'patch must not pin web.searchProvider');
   assert.match(patch, /- id: web-search-pool\n/, 'patch must insert the provider row');
   assert.match(patch, /name: dsh-web-search-pool/, 'provider row mounts the package entry');
+  assert.match(patch, /fallbackToOfficial: false/, 'default is complete replacement (no official fallback)');
 });
 
 test('compat: package.json 的 dsh 装配字段', () => {
@@ -160,11 +159,16 @@ test('compat: host half 不得静态导入已删除的 settings API', () => {
     'SETTINGS_NAMESPACE must be the loader row id (0.1.7 form namespace)');
 });
 
-test('compat: web 行同步保留 fetchProvider 且探测两个行 id', () => {
+test('compat: host half 在 web.search 服务方法上接管，不依赖 provider id', () => {
   const code = codeOf(read('../src/dsh/index.js'));
-  assert.ok(code.includes('fetchProvider'), 'host must restate fetchProvider when syncing the web row');
-  assert.ok(code.includes('readWebRowConfig'), 'host must merge the live web-row config instead of overwriting it');
-  assert.ok(code.includes("WEB_ROW_IDS"), 'host must probe the web row id (web for 0.1.7, include:web for older hosts)');
+  assert.match(code, /SearchTakeover/, 'host must install the reversible takeover');
+  assert.match(code, /takeover\.attach\(/, 'host must attach the takeover to ctx.web');
+  assert.match(code, /fallbackToOfficial/, 'host must expose the no-official-fallback default');
+  const takeover = codeOf(read('../src/dsh/takeover.js'));
+  assert.match(takeover, /Object\.defineProperty\(web, 'search'/, 'takeover must replace the web.search service method');
+  assert.match(takeover, /servicePatch/, 'takeover must record the original descriptor for restoration');
+  assert.match(takeover, /WEB_PROVIDER_UNAVAILABLE/, 'takeover must throw a neutral unavailable error');
+  assert.equal(takeover.includes('api.deepseek.com'), false, 'takeover must not call the official endpoint itself');
 });
 
 test('compat: Config schema 的 volatile 形态（表单投影 + Ref 运行期）', () => {

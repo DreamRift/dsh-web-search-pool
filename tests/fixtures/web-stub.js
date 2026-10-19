@@ -1,7 +1,9 @@
 /**
- * 测试夹具：`web` seam 的最小 loader 行（与线上 `@deepseek-ai/dsh-web` 同构：
- * 提供 `web` 服务 + 记录 registerSearchProvider 的调用）。
- * 只给 host apply 测试用，不进发布包（package.json 的 files 不含 tests/）。
+ * 测试夹具：`web` seam 的最小 loader 行（与线上 `@deepseek-ai/dsh-web` 的
+ * `WebRuntime` 同构：`searchProviders` Map、重复 id 抛错、按 config 选 provider、
+ * `registerSearchProvider` 返回 disposer）。
+ *
+ * 只给 host apply / takeover 测试用，不进发布包（package.json 的 files 不含 tests/）。
  */
 import z from '@deepseek-ai/schemastery';
 
@@ -12,16 +14,42 @@ export const Config = z.object({
   fetchProvider: z.string(),
 });
 
+/** 与宿主 `WEB_DUPLICATE_PROVIDER` 同形的错误。 */
+function duplicateProviderError(id) {
+  return Object.assign(new Error('duplicate search provider "' + id + '"'), { code: 'WEB_DUPLICATE_PROVIDER' });
+}
+
 export function apply(ctx, config) {
-  ctx.reflect.provide('web', {
+  /** 与线上 `WebRuntime.searchProviders` 相同的注册表。 */
+  const searchProviders = new Map();
+  const calls = [];
+  const web = {
     config,
-    registered: [],
+    searchProviders,
+    calls,
     registerSearchProvider(provider) {
-      this.registered.push(provider);
+      if (provider == null || typeof provider.id !== 'string') {
+        throw Object.assign(new Error('invalid search provider'), { code: 'WEB_PROVIDER_INVALID' });
+      }
+      if (searchProviders.has(provider.id)) throw duplicateProviderError(provider.id);
+      searchProviders.set(provider.id, provider);
       return () => {
-        const index = this.registered.indexOf(provider);
-        if (index >= 0) this.registered.splice(index, 1);
+        if (searchProviders.get(provider.id) === provider) searchProviders.delete(provider.id);
       };
     },
-  });
+    /** 与线上 `WebRuntime.search` 相同的 provider 选择语义。 */
+    async search(request, signal) {
+      const id = config.searchProvider;
+      const provider = searchProviders.get(id);
+      calls.push(id);
+      if (provider == null) {
+        throw Object.assign(new Error('provider "' + id + '" is not registered'), { code: 'WEB_PROVIDER_CONFIGURED_MISSING' });
+      }
+      if (provider.available() !== true) {
+        throw Object.assign(new Error('provider "' + id + '" is unavailable'), { code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' });
+      }
+      return provider.search(request, signal);
+    },
+  };
+  ctx.reflect.provide('web', web);
 }

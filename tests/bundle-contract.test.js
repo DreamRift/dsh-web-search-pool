@@ -28,13 +28,12 @@ test('bundle contract: cordis.patch.yml exists and has correct structure', () =>
   const content = readFileSync(patchYmlPath, 'utf-8');
   
   assert.ok(content.length > 0, 'cordis.patch.yml must exist and not be empty');
-  assert.ok(content.includes('- id: web'), 'patch must override web row');
-  assert.ok(content.includes('searchProvider: search-pool'), 'web row must set searchProvider to search-pool');
-  // id-targeted patches replace the whole config, so the 0.1.2 official web row's
-  // fetchProvider pin must be restated or web_fetch loses its provider.
-  assert.ok(content.includes('fetchProvider: http'), 'web row must restate fetchProvider: http (0.1.2 base config)');
+  // 0.5.0: 不再改写官方 web 行（运行时接管 ctx.web.search），避免被 profile patch 覆盖。
+  assert.equal(content.includes('- id: web\n'), false, 'patch must not override the official web row');
+  assert.equal(content.includes('searchProvider: search-pool'), false, 'patch must not pin web.searchProvider');
   assert.ok(content.includes('insert:'), 'patch must have insert section');
   assert.ok(content.includes('id: web-search-pool'), 'must insert web-search-pool provider row');
+  assert.ok(content.includes('fallbackToOfficial: false'), 'default must be complete replacement (no official fallback)');
 });
 
 test('bundle contract: provider id consistency', () => {
@@ -54,9 +53,11 @@ test('bundle contract: provider id consistency', () => {
   assert.ok(indexContent.includes('SEARCH_POOL_PROVIDER_ID'),
     'index.js must re-export SEARCH_POOL_PROVIDER_ID');
   
-  // 4. Patch must agree on the same provider id
-  assert.ok(patchContent.includes('searchProvider: search-pool'),
-    'cordis.patch.yml must use searchProvider: search-pool');
+  // 4. Patch must insert the same provider row id (no web.searchProvider pin).
+  assert.ok(patchContent.includes('id: web-search-pool'),
+    'cordis.patch.yml must insert the web-search-pool row');
+  assert.ok(patchContent.includes('name: dsh-web-search-pool'),
+    'cordis.patch.yml must mount the package entry');
 });
 
 test('bundle contract: peerDependencies must use specific versions', () => {
