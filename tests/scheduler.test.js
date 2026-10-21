@@ -83,6 +83,25 @@ test('Scheduler: recordError 连续失败触发熔断，key 暂时不可用', ()
   assert.notEqual(next.id, e.id); // 熔断的 key 不再被选
 });
 
+test('Scheduler: acquire(exclude) 跳过本次搜索已试过的 entry', () => {
+  const { scheduler } = buildScheduler();
+  const first = scheduler.acquire();
+  const tried = new Set([first.id]);
+  const second = scheduler.acquire(tried);
+  assert.notEqual(second.id, first.id);
+  // 排除参数也接受任意可迭代对象（不只 Set）。
+  const third = scheduler.acquire([first.id, second.id]);
+  assert.ok(![first.id, second.id].includes(third.id));
+});
+
+test('Scheduler: 排除全部 entry 后 acquire 返回 null（单次搜索推进到尽头）', () => {
+  const { scheduler } = buildScheduler();
+  const all = new Set(['t1', 't2', 'e1']);
+  assert.equal(scheduler.acquire(all), null);
+  // 排除是调用级语义：不影响冷却/权重状态，下一次不传 exclude 仍能选到 key。
+  assert.notEqual(scheduler.acquire(), null);
+});
+
 test('Scheduler: recordSuccess 清零失败计数', () => {
   const { scheduler } = buildScheduler({ allowedFails: 2 });
   const e = scheduler.acquire();

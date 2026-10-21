@@ -33,20 +33,32 @@ export class Scheduler {
   /**
    * 选一个可用 entry 并消费一个令牌；无可用返回 null。
    * 按 providerPriority 依次尝试供应商（failover）。
+   *
+   * `exclude` 用于**单次搜索内的重试推进**：调用方把已经试过的 entry id 放进去，
+   * 后续 acquire 就跳过它们，从而保证一次搜索内每个 entry 至多尝试一次。
+   * 排除只在本次 acquire 调用内生效——不写冷却、不改失败计数、不影响权重轮转状态。
+   * @param {Iterable<string>|null} [exclude] 本次搜索已试过的 entry id 集合。
    * @returns {object|null}
    */
-  acquire() {
+  acquire(exclude = null) {
+    const excluded = exclude == null ? null : exclude instanceof Set ? exclude : new Set(exclude);
     const now = this.now();
     for (const provider of this.providerPriority) {
-      const entry = this._acquireFromProvider(provider, now);
+      const entry = this._acquireFromProvider(provider, now, excluded);
       if (entry) return entry;
     }
     return null;
   }
 
-  _acquireFromProvider(provider, now) {
+  /**
+   * @param {string} provider
+   * @param {number} now
+   * @param {Set<string>|null} excluded 已试过、本次不再选的 entry id。
+   */
+  _acquireFromProvider(provider, now, excluded = null) {
     const entries = this.keyPool.entriesForProvider(provider);
-    const candidates = entries.filter((e) => !this.keyPool.isCooling(e, now));
+    const candidates = entries.filter((e) => !this.keyPool.isCooling(e, now)
+      && (excluded == null || !excluded.has(e.id)));
     if (candidates.length === 0) return null;
 
     if (this.strategy === STRATEGY_LEAST_USED) {

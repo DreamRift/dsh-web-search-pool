@@ -313,7 +313,11 @@ export class SearchPoolProvider {
       throw new WebError('Web search is not configured: add at least one search key', 'WEB_PROVIDER_CREDENTIAL_MISSING');
     }
     const pool = this._getPool(options);
+    // 单次搜索内每个 entry 至多尝试一次：试过就进 tried，后续 acquire 跳过。
+    // maxAttempts 只是上界（acquire 返回 null 会更早结束），避免同一 key 被重复重试
+    // 把重试次数用光，导致健康 key / 下一个供应商根本没被尝试。
     const maxAttempts = pool.keyPool.totalKeys;
+    const tried = new Set();
     const timeoutMs = options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs;
 
     // 后台维护 Tavily 额度缓存（不阻塞搜索）：未过期直接复用，过期则单飞刷新，
@@ -333,8 +337,10 @@ export class SearchPoolProvider {
     let lastError = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       throwIfAborted(signal);
-      const entry = pool.scheduler.acquire();
+      const entry = pool.scheduler.acquire(tried);
       if (entry == null) break;
+      // 先登记再走凭据/闸门：这些分支失败的 entry 也算「本次搜索已试」，不再重复选中。
+      tried.add(entry.id);
 
       let apiKey;
       try {

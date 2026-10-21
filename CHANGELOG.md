@@ -2,6 +2,33 @@
 
 All notable changes to this project.
 
+## [0.5.1] - 2026-10-21
+
+### Fixed
+- **单次搜索内重复重试同一个失败的 key（GitHub issue #1）**：第一个被选中的 key 若返回
+  HTTP 5xx / 401 / 网络错或单次超时，下一轮又会被选中；`maxAttempts = keyPool.totalKeys`
+  因此很快耗尽，同供应商的健康 key 和下一个供应商都不会被尝试（最常见「1 个 Tavily key
+  + Exa 兜底」配置在 5xx/超时时不会切换，上游挂起时每次搜索耗满宿主预算后失败）。
+  - 根因：`_search` 每轮都重新 `scheduler.acquire()`，不排除本次搜索已试过的 entry；
+    非 429 失败只累加 `failCount`（默认连续 3 次才冷却），smooth WRR 下高权重 key 会
+    连续胜出。
+  - 修复：`Scheduler.acquire(exclude)` 新增「本次搜索已试 entry」排除参数，
+    `SearchPoolProvider._search` 维护 `tried` 集合并登记每个已选 entry——**一次搜索内
+    每个 entry 至多尝试一次**，失败立即换 key / 换供应商。冷却与失败计数语义不变，
+    排除只在单次 acquire 调用内生效。
+- **测试假绿**：原超时换 key 用例的两个 key rpm 都是 60，WRR 恰好交替，掩盖了该缺陷；
+  改为 rpm 60/10 并断言上游尝试序列。
+
+### Added
+- 回归用例 5 个（`tests/scheduler.test.js` 2 个、`tests/provider.test.js` 3 个 +
+  改写超时用例）：`acquire(exclude)` 跳过/排空、同供应商 5xx 换 key、跨供应商 failover、
+  全部失败时每 key 只试一次；验证「移除修复后 4 个用例必红」。合计 136 用例全绿。
+
+### Docs
+- [架构与机制](docs/架构与机制.md) §4.3/§4.4/§10 与 [开发规范与事故复盘](docs/开发规范与事故复盘.md) §1.9 记录
+  修复语义与边界：单次搜索不重试同一 key；宿主 30s 截止时间不向 provider 暴露，
+  单次超时仍由 `requestTimeoutMs` 控制，多 key 同时挂起仍是已知限制。
+
 ## [0.5.0] - 2026-10-19
 
 ### Fixed

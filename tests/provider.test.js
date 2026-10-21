@@ -22,10 +22,24 @@ let usageCalls = 0;
 let searchCalls = 0;
 /** 这些 api_key 的 /search 请求将挂起（用于超时测试）。 */
 let hangingApiKeys = new Set();
+/** 这些 api_key 的 /search 请求返回 HTTP 500（用于 failover 测试）。 */
+let failingApiKeys = new Set();
+/** 每次上游搜索尝试按顺序记一条 `<provider>:<apiKey>`，用于断言「同一次搜索不重复试同一 key」。 */
+let upstream = [];
+
+/** 重置全部 mock 状态（新用例开头统一调用，避免跨用例串味）。 */
+function resetUpstream() {
+  usageCalls = 0;
+  searchCalls = 0;
+  hangingApiKeys = new Set();
+  failingApiKeys = new Set();
+  upstream = [];
+}
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
-  if (String(url).includes('/usage')) {
+  const target = String(url);
+  if (target.includes('/usage')) {
     usageCalls += 1;
     // 第一次只剩 1 credit（< 保留值 2），之后刷新恢复 1000。
     const remaining = usageCalls === 1 ? 1 : 1000;
@@ -34,9 +48,21 @@ globalThis.fetch = async (url, init) => {
       account: { current_plan: 'Researcher', plan_usage: 1000 - remaining, plan_limit: 1000 },
     });
   }
-  if (String(url).includes('/search')) {
+  // Exa REST（有 key）与 Tavily 都叫 /search，按 host 区分：Exa 用 x-api-key 头。
+  if (target.includes('api.exa.ai/search')) {
+    const apiKey = init.headers?.['x-api-key'];
+    upstream.push('exa:' + apiKey);
+    if (failingApiKeys.has(apiKey)) return jsonResponse(500, {});
+    searchCalls += 1;
+    return jsonResponse(200, {
+      results: [{ url: 'https://e.com', title: 'E', text: 'exa snippet', publishedDate: '2026-01-02' }],
+    });
+  }
+  if (target.includes('/search')) {
     const apiKey = JSON.parse(init.body).api_key;
+    upstream.push('tavily:' + apiKey);
     if (hangingApiKeys.has(apiKey)) return hangingResponse(init);
+    if (failingApiKeys.has(apiKey)) return jsonResponse(500, {});
     searchCalls += 1;
     return jsonResponse(200, {
       results: [{ url: 'https://a.com', title: 'A', content: 'snippet' }],
@@ -171,14 +197,15 @@ test('SearchPoolProvider: 并发 refreshUsage 复用同一次刷新（防重入�
 });
 
 test('SearchPoolProvider: 单次请求超时按 key 失败处理并换 key', async () => {
-  usageCalls = 0;
-  searchCalls = 0;
+  resetUpstream();
   hangingApiKeys = new Set(['tvly-slow']);
+  // rpm 故意配成 60/10：smooth WRR 会连续偏向 t1，只有「排除已试 entry」才能推进到 t2。
   const provider = new SearchPoolProvider(() => ({
     ...options(),
+    quotaReserveCredits: 0,
     entries: [
       { id: 't1', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_1', rpm: 60 },
-      { id: 't2', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_2', rpm: 60 },
+      { id: 't2', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_2', rpm: 10 },
     ],
     requestTimeoutMs: 50,
     resolveKey: async (entry) => entry.id === 't1' ? 'tvly-slow' : 'tvly-fast',
@@ -188,7 +215,67 @@ test('SearchPoolProvider: 单次请求超时按 key 失败处理并换 key', asy
   const elapsed = Date.now() - started;
   assert.equal(result.sources.length, 1);
   assert.equal(searchCalls, 1); // 快 key 成功返回
+  assert.deepEqual(upstream, ['tavily:tvly-slow', 'tavily:tvly-fast']); // 每个 key 只试一次
   assert.ok(elapsed < 4_000, `超时后应快速换 key，实际耗时 ${elapsed}ms`);
+});
+
+test('SearchPoolProvider: 同供应商 key 返回 HTTP 500 时换下一个 key（不重复试同一 key）', async () => {
+  resetUpstream();
+  failingApiKeys = new Set(['tvly-bad']);
+  const requests = [];
+  const provider = new SearchPoolProvider(() => ({
+    ...options(),
+    quotaReserveCredits: 0,
+    entries: [
+      { id: 't1', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_1', rpm: 60 },
+      { id: 't2', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_2', rpm: 10 },
+    ],
+    resolveKey: async (entry) => entry.id === 't1' ? 'tvly-bad' : 'tvly-good',
+    recordRequest: (record) => { requests.push(record); },
+  }));
+  const result = await provider.search({ query: 'q', maxResults: 8 });
+  assert.equal(result.sources.length, 1);
+  assert.deepEqual(upstream, ['tavily:tvly-bad', 'tavily:tvly-good']);
+  assert.deepEqual(requests.map((r) => r.keyId), ['t1', 't2']);
+});
+
+test('SearchPoolProvider: 高优先级供应商 5xx 时 failover 到下一个供应商', async () => {
+  resetUpstream();
+  failingApiKeys = new Set(['tvly-bad']);
+  const provider = new SearchPoolProvider(() => ({
+    ...options(),
+    quotaReserveCredits: 0,
+    entries: [
+      { id: 't1', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_1', rpm: 60 },
+      { id: 'e1', provider: 'exa', credentialRef: 'EXA_API_KEY_1', rpm: 30 },
+    ],
+    providerPriority: ['tavily', 'exa'],
+    resolveKey: async (entry) => entry.provider === 'tavily' ? 'tvly-bad' : 'exa-good',
+  }));
+  const result = await provider.search({ query: 'q', maxResults: 8 });
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].url, 'https://e.com');
+  assert.deepEqual(upstream, ['tavily:tvly-bad', 'exa:exa-good']);
+});
+
+test('SearchPoolProvider: 全部 key 失败时每个 key 只尝试一次', async () => {
+  resetUpstream();
+  failingApiKeys = new Set(['tvly-bad-1', 'tvly-bad-2']);
+  const provider = new SearchPoolProvider(() => ({
+    ...options(),
+    quotaReserveCredits: 0,
+    entries: [
+      { id: 't1', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_1', rpm: 60 },
+      { id: 't2', provider: 'tavily', credentialRef: 'TAVILY_API_KEY_2', rpm: 10 },
+    ],
+    resolveKey: async (entry) => entry.id === 't1' ? 'tvly-bad-1' : 'tvly-bad-2',
+  }));
+  await assert.rejects(
+    provider.search({ query: 'q', maxResults: 8 }),
+    (error) => error.code === 'WEB_PROVIDER_ERROR',
+  );
+  assert.equal(upstream.length, 2);
+  assert.equal(new Set(upstream).size, 2); // 没有重复尝试
 });
 
 test('SearchPoolProvider: resolveKey 抛错按 key 失败处理，不中断整个搜索', async () => {
